@@ -3,6 +3,7 @@ load_dotenv()
 import os, re, json, uuid, sqlite3, hashlib, secrets
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, redirect, url_for, abort, session
+from werkzeug.utils import secure_filename
 import google.generativeai as genai
 from ppt_utils import extract_text_from_file
 from quiz_logic import generate_quiz
@@ -12,10 +13,6 @@ app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 DB_PATH = os.environ.get("DATABASE_PATH", "qslide.db")
 UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", "uploads")
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-db_dir = os.path.dirname(DB_PATH)
-if db_dir:
-    os.makedirs(db_dir, exist_ok=True)
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 db_dir = os.path.dirname(DB_PATH)
 if db_dir:
@@ -171,7 +168,7 @@ def learner():
 @app.route('/upload', methods=['POST'])
 def upload():
     file = request.files.get('file')
-    if not file:
+    if not file or not file.filename:
         return "No file uploaded."
     try:
         num_questions = int(request.form.get('num_questions', 10))
@@ -186,23 +183,26 @@ def upload():
 
     allowed_ext = ('.ppt', '.pptx', '.pdf')
     if not file.filename.lower().endswith(allowed_ext):
-        return "<h3>Unsupported file type</h3><p>Please upload a PPT, PPTX, or PDF file.</p>"
+        return "<h3>Unsupported file type</h3><p>Please upload a PPTX or PDF file.</p>", 400
 
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+    filename = secure_filename(file.filename)
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], f"{uuid.uuid4().hex}_{filename}")
     file.save(filepath)
     try:
         text     = extract_text_from_file(filepath)
         if not text.strip():
-            return "<h3>No readable text found</h3><p>Please upload a text-based PPT, PPTX, or PDF file.</p>"
+            return "<h3>No readable text found</h3><p>Please upload a text-based PPTX or PDF file.</p>", 400
         quiz_raw = generate_quiz(text, num_questions)
         match    = re.search(r'\[.*\]', quiz_raw, re.DOTALL)
         if match:
             quiz_data = json.loads(match.group(0))
             return render_template('quiz.html', quiz_data=quiz_data, time_limit=time_limit)
         else:
-            return f"<h3>Format Error</h3><pre>{quiz_raw}</pre>"
-    except Exception as e:
-        return f"<h3>Error:</h3><p>{str(e)}</p>"
+            return f"<h3>Quiz generation error</h3><pre>{quiz_raw}</pre>", 502
+    except ValueError as e:
+        return f"<h3>Upload Error</h3><p>{str(e)}</p>", 400
+    except Exception:
+        return "<h3>Error</h3><p>Something went wrong while generating the quiz. Please try again.</p>", 500
 
 @app.route('/explain', methods=['POST'])
 def explain():

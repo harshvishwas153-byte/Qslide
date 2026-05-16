@@ -1,8 +1,15 @@
 from pptx import Presentation
 from pypdf import PdfReader
 
-def extract_text_from_ppt(file_path):
-    prs = Presentation(file_path)
+def extract_text_from_pptx(file_path):
+    try:
+        prs = Presentation(file_path)
+    except Exception as exc:
+        raise ValueError(
+            "This PowerPoint file could not be read. Please upload a valid .pptx file, "
+            "or export the presentation as PDF and upload the PDF."
+        ) from exc
+
     text = ""
 
     for slide in prs.slides:
@@ -13,7 +20,13 @@ def extract_text_from_ppt(file_path):
     return text
 
 def extract_text_from_pdf(file_path):
-    reader = PdfReader(file_path)
+    try:
+        reader = PdfReader(file_path)
+    except Exception as exc:
+        raise ValueError(
+            "This PDF file could not be read. Please upload a valid text-based PDF."
+        ) from exc
+
     pages = []
 
     for page in reader.pages:
@@ -24,9 +37,14 @@ def extract_text_from_pdf(file_path):
 def extract_text_from_file(file_path):
     lower_path = file_path.lower()
 
-    if lower_path.endswith((".ppt", ".pptx")):
-        return extract_text_from_ppt(file_path)
+    if lower_path.endswith(".pptx"):
+        return extract_text_from_pptx(file_path)
+    if lower_path.endswith(".ppt"):
+        raise ValueError(
+            "Old .ppt files are not supported. Please save the presentation as .pptx "
+            "or export it as PDF, then upload again."
+        )
     if lower_path.endswith(".pdf"):
         return extract_text_from_pdf(file_path)
 
-    raise ValueError("Unsupported file type. Please upload a PPT, PPTX, or PDF file.")
+    raise ValueError("Unsupported file type. Please upload a PPTX or PDF file.")
