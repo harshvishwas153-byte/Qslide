@@ -9,16 +9,24 @@ from quiz_logic import generate_quiz
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
-UPLOAD_FOLDER = "uploads"
+DB_PATH = os.environ.get("DATABASE_PATH", "qslide.db")
+UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", "uploads")
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+db_dir = os.path.dirname(DB_PATH)
+if db_dir:
+    os.makedirs(db_dir, exist_ok=True)
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+db_dir = os.path.dirname(DB_PATH)
+if db_dir:
+    os.makedirs(db_dir, exist_ok=True)
 
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 explain_model = genai.GenerativeModel(os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"))
 
 # ── DATABASE ──
 def get_db():
-    db = sqlite3.connect('qslide.db')
+    db = sqlite3.connect(DB_PATH)
     db.row_factory = sqlite3.Row
     return db
 
