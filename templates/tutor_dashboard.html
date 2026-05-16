@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Tutor Dashboard — Qslide</title>
+       <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+    <style>
+        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:'DM Sans',sans-serif;background:#f4f5f7;color:#1a1a2e;min-height:100vh}
+        .header{background:#fff;border-bottom:1px solid #e8e8ec;padding:13px 32px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:50;box-shadow:0 1px 12px rgba(0,0,0,.06)}
+        .logo{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:#1a1a2e;text-decoration:none}
+        .logo span{color:#4ecdc4}
+        .header-right{display:flex;gap:10px;align-items:center}
+        .back-btn{font-size:13px;color:#888;text-decoration:none;border:1px solid #e0e0e8;padding:7px 14px;border-radius:8px;transition:all .2s}
+        .back-btn:hover{color:#1a1a2e;border-color:#aaa}
+        .logout-btn{font-size:13px;color:#ef4444;text-decoration:none;border:1px solid #fecaca;padding:7px 14px;border-radius:8px;background:#fff5f5;transition:all .2s;cursor:pointer}
+        .logout-btn:hover{background:#fee2e2}
+
+        /* AUTH SECTION */
+        .auth-wrap{max-width:460px;margin:60px auto;padding:0 20px}
+        .auth-card{background:#fff;border-radius:20px;padding:40px 36px;border:1px solid #e8e8ec;box-shadow:0 4px 20px rgba(0,0,0,.06)}
+        .auth-tabs{display:flex;gap:0;margin-bottom:32px;border-radius:12px;overflow:hidden;border:1.5px solid #e0e0e8}
+        .tab{flex:1;padding:11px;text-align:center;font-family:'Syne',sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;background:#fafafa;color:#aaa;border:none}
+        .tab.active{background:linear-gradient(135deg,#7c5cbf,#4ecdc4);color:#fff}
+        .auth-title{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;color:#1a1a2e;margin-bottom:6px}
+        .auth-sub{font-size:13px;color:#aaa;margin-bottom:24px}
+        .form-group{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
+        label{font-size:13px;font-weight:500;color:#555}
+        input{padding:12px 14px;border:1.5px solid #e8e8ec;border-radius:10px;font-family:'DM Sans',sans-serif;font-size:14px;color:#1a1a2e;background:#fafafa;outline:none;transition:border-color .2s}
+        input:focus{border-color:#7c5cbf;background:#fff}
+        .auth-btn{width:100%;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,#7c5cbf,#4ecdc4);color:#fff;font-family:'Syne',sans-serif;font-size:15px;font-weight:700;cursor:pointer;transition:all .2s;margin-top:6px}
+        .auth-btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(124,92,191,.3)}
+        .auth-btn:disabled{opacity:.6;cursor:not-allowed;transform:none}
+        .error-msg{background:#fee2e2;color:#991b1b;border:1px solid #fecaca;border-radius:9px;padding:10px 14px;font-size:13px;margin-bottom:14px;display:none}
+        .pin-note{font-size:12px;color:#aaa;margin-top:8px;line-height:1.5}
+
+        /* TUTOR ID BOX */
+        .id-box{background:#f3f0ff;border:1.5px solid #d0c4f0;border-radius:12px;padding:16px;margin-bottom:16px}
+        .id-label{font-size:11px;color:#9879d6;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px}
+        .id-value{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:#7c5cbf;letter-spacing:.04em}
+        .id-note{font-size:12px;color:#aaa;margin-top:6px}
+
+        /* DASHBOARD */
+        .dash-wrap{max-width:900px;margin:0 auto;padding:36px 20px}
+        .dash-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:28px;flex-wrap:wrap;gap:12px}
+        .dash-title{font-family:'Syne',sans-serif;font-size:24px;font-weight:800;color:#1a1a2e}
+        .dash-sub{font-size:14px;color:#888;margin-top:3px}
+        .new-quiz-btn{padding:12px 24px;border-radius:12px;border:none;background:linear-gradient(135deg,#7c5cbf,#4ecdc4);color:#fff;font-family:'Syne',sans-serif;font-size:14px;font-weight:700;cursor:pointer;text-decoration:none;transition:all .2s;box-shadow:0 4px 14px rgba(124,92,191,.25)}
+        .new-quiz-btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(124,92,191,.35)}
+
+        /* QUIZ CARDS */
+        .quiz-grid{display:flex;flex-direction:column;gap:14px}
+        .quiz-card{background:#fff;border-radius:14px;padding:20px 24px;border:1px solid #e8e8ec;box-shadow:0 2px 8px rgba(0,0,0,.04);display:flex;align-items:center;gap:16px;transition:box-shadow .2s}
+        .quiz-card:hover{box-shadow:0 4px 18px rgba(0,0,0,.08)}
+        .quiz-icon{width:44px;height:44px;border-radius:12px;background:#f3f0ff;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+        .quiz-info{flex:1}
+        .quiz-title{font-family:'Syne',sans-serif;font-size:16px;font-weight:700;color:#1a1a2e;margin-bottom:4px}
+        .quiz-meta{font-size:12px;color:#aaa;display:flex;gap:14px;flex-wrap:wrap}
+        .quiz-actions{display:flex;gap:8px;flex-shrink:0}
+        .q-btn{padding:8px 16px;border-radius:9px;font-family:'Syne',sans-serif;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none;transition:all .2s;border:none}
+        .q-btn.results{background:#f3f0ff;color:#7c5cbf;border:1px solid #d0c4f0}
+        .q-btn.results:hover{background:#ece6ff}
+        .q-btn.copy{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0}
+        .q-btn.copy:hover{background:#dcfce7}
+        .status-badge{padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600}
+        .status-badge.active{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0}
+        .status-badge.expired{background:#fff5f5;color:#991b1b;border:1px solid #fecaca}
+        .empty-msg{text-align:center;padding:60px 20px;color:#bbb;font-size:15px;background:#fff;border-radius:16px;border:1px solid #e8e8ec}
+    </style>
+</head>
+<body>
+<div class="header">
+    <a href="/" class="logo">Q<span>slide</span></a>
+    <div class="header-right">
+        {% if tutor %}
+        <span style="font-size:13px;color:#888;">👋 {{ tutor.name }}</span>
+        <a href="/tutor/logout" class="logout-btn">Logout</a>
+        {% else %}
+        <a href="/" class="back-btn">← Back</a>
+        {% endif %}
+    </div>
+</div>
+
+{% if not tutor %}
+<!-- ── AUTH SECTION ── -->
+<div class="auth-wrap">
+    <div class="auth-card">
+        <div class="auth-tabs">
+            <button class="tab active" onclick="showTab('login')" id="tab-login">Login</button>
+            <button class="tab" onclick="showTab('register')" id="tab-register">New Account</button>
+        </div>
+
+        <div id="error-box" class="error-msg"></div>
+
+        <!-- LOGIN -->
+        <div id="login-form">
+            <div class="auth-title">Welcome back! 👋</div>
+            <div class="auth-sub">Enter your Tutor ID and PIN to continue</div>
+            <div class="form-group">
+                <label>Your Tutor ID</label>
+                <input type="text" id="login-id" placeholder="e.g. A1B2C3D4-..." style="font-family:monospace;font-size:12px;" />
+            </div>
+            <div class="form-group">
+                <label>Your PIN</label>
+                <input type="password" id="login-pin" placeholder="Enter your PIN" maxlength="10" />
+            </div>
+            <button class="auth-btn" onclick="doLogin()">Login to Dashboard →</button>
+        </div>
+
+        <!-- REGISTER -->
+        <div id="register-form" style="display:none">
+            <div class="auth-title">Create Tutor Account 🧑‍🏫</div>
+            <div class="auth-sub">Set a PIN to protect your quizzes</div>
+            <div class="form-group">
+                <label>Your Name</label>
+                <input type="text" id="reg-name" placeholder="e.g. Mr. Sharma" />
+            </div>
+            <div class="form-group">
+                <label>Create PIN (min 4 digits)</label>
+                <input type="password" id="reg-pin" placeholder="e.g. 1234" maxlength="10" />
+            </div>
+            <div class="form-group">
+                <label>Confirm PIN</label>
+                <input type="password" id="reg-pin2" placeholder="Re-enter PIN" maxlength="10" />
+            </div>
+            <button class="auth-btn" onclick="doRegister()">Create Account →</button>
+        </div>
+    </div>
+</div>
+
+<!-- SUCCESS MODAL after register -->
+<div id="successOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(6px);z-index:300;align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:22px;padding:40px 36px;max-width:440px;width:90%;text-align:center;">
+        <div style="font-size:44px;margin-bottom:14px;">🎉</div>
+        <div style="font-family:'Syne',sans-serif;font-size:22px;font-weight:800;color:#1a1a2e;margin-bottom:8px;">Account Created!</div>
+        <div style="font-size:13px;color:#888;margin-bottom:20px;">Save your Tutor ID — you'll need it to login next time</div>
+        <div class="id-box">
+            <div class="id-label">Your Tutor ID</div>
+            <div class="id-value" id="newTutorId">—</div>
+            <div class="id-note">⚠️ Save this ID + your PIN somewhere safe</div>
+        </div>
+        <button onclick="copyTutorId()" style="width:100%;padding:12px;border-radius:11px;border:1.5px solid #d0c4f0;background:#f3f0ff;color:#7c5cbf;font-family:'Syne',sans-serif;font-size:14px;font-weight:700;cursor:pointer;margin-bottom:10px;" id="copyIdBtn">📋 Copy Tutor ID</button>
+        <button onclick="goToDashboard()" style="width:100%;padding:13px;border-radius:11px;border:none;background:linear-gradient(135deg,#7c5cbf,#4ecdc4);color:#fff;font-family:'Syne',sans-serif;font-size:14px;font-weight:700;cursor:pointer;">Go to Dashboard →</button>
+    </div>
+</div>
+
+{% else %}
+<!-- ── DASHBOARD ── -->
+<div class="dash-wrap">
+    <div class="dash-header">
+        <div>
+            <div class="dash-title">📊 Your Quizzes</div>
+            <div class="dash-sub">Welcome back, {{ tutor.name }}!</div>
+        </div>
+        <a href="/tutor/create" class="new-quiz-btn">＋ Create New Quiz</a>
+    </div>
+
+    <div class="quiz-grid">
+        {% if quizzes %}
+            {% for q in quizzes %}
+            <div class="quiz-card">
+                <div class="quiz-icon">📝</div>
+                <div class="quiz-info">
+                    <div class="quiz-title">{{ q.title }}</div>
+                    <div class="quiz-meta">
+                        <span>🔑 {{ q.id }}</span>
+                        <span>⏱ {{ q.time_limit }} min</span>
+                        <span>👥 {{ q.sub_count }} student{{ 's' if q.sub_count != 1 }}</span>
+                        <span>📅 {{ q.created_at }}</span>
+                        <span>⏳ Expires: {{ q.expires_at }}</span>
+                        <span class="status-badge {{ 'expired' if q.is_expired else 'active' }}">{{ '⛔ Expired' if q.is_expired else '🟢 Active' }}</span>
+                    </div>
+                </div>
+                <div class="quiz-actions">
+                    <button class="q-btn copy" onclick="copyLink('{{ q.link }}', this)">📋 Copy Link</button>
+                    <a href="/tutor/results/{{ q.id }}" class="q-btn results">📊 Results</a>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="empty-msg">
+                📭 You haven't created any quizzes yet.<br>
+                <small style="margin-top:8px;display:block;">Click "Create New Quiz" to get started!</small>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<script>
+    function showTab(tab) {
+        document.getElementById('login-form').style.display    = tab === 'login'    ? 'block' : 'none';
+        document.getElementById('register-form').style.display = tab === 'register' ? 'block' : 'none';
+        document.getElementById('tab-login').classList.toggle('active',    tab === 'login');
+        document.getElementById('tab-register').classList.toggle('active', tab === 'register');
+        hideError();
+    }
+
+    function showError(msg) {
+        const box = document.getElementById('error-box');
+        box.textContent = msg;
+        box.style.display = 'block';
+    }
+
+    function hideError() {
+        document.getElementById('error-box').style.display = 'none';
+    }
+
+    async function doLogin() {
+        hideError();
+        const tutor_id = document.getElementById('login-id').value.trim();
+        const pin      = document.getElementById('login-pin').value.trim();
+        if (!tutor_id || !pin) { showError('Please enter your Tutor ID and PIN.'); return; }
+
+        const res  = await fetch('/tutor/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ tutor_id, pin }) });
+        const data = await res.json();
+        if (data.success) {
+            window.location.href = '/tutor/dashboard';
+        } else {
+            showError(data.error || 'Login failed. Check your ID and PIN.');
+        }
+    }
+
+    async function doRegister() {
+        hideError();
+        const name = document.getElementById('reg-name').value.trim();
+        const pin  = document.getElementById('reg-pin').value.trim();
+        const pin2 = document.getElementById('reg-pin2').value.trim();
+        if (!name) { showError('Please enter your name.'); return; }
+        if (pin.length < 4) { showError('PIN must be at least 4 digits.'); return; }
+        if (pin !== pin2)   { showError('PINs do not match.'); return; }
+
+        const res  = await fetch('/tutor/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name, pin }) });
+        const data = await res.json();
+        if (data.success) {
+            document.getElementById('newTutorId').textContent = data.tutor_id;
+            document.getElementById('successOverlay').style.display = 'flex';
+        } else {
+            showError(data.error || 'Registration failed.');
+        }
+    }
+
+    function copyTutorId() {
+        const id = document.getElementById('newTutorId').textContent;
+        navigator.clipboard.writeText(id).then(() => {
+            document.getElementById('copyIdBtn').textContent = '✅ Copied!';
+        });
+    }
+
+    function goToDashboard() {
+        window.location.href = '/tutor/dashboard';
+    }
+
+    function copyLink(link, btn) {
+        navigator.clipboard.writeText(link).then(() => {
+            btn.textContent = '✅ Copied!';
+            setTimeout(() => btn.textContent = '📋 Copy Link', 2000);
+        });
+    }
+
+    // Allow Enter key on login
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+            const loginVisible = document.getElementById('login-form').style.display !== 'none';
+            if (loginVisible) doLogin();
+            else doRegister();
+        }
+    });
+</script>
+</body>
+</html>

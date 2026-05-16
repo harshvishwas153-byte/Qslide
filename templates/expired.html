@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Quiz Expired — Qslide</title>
+        <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'DM Sans', sans-serif; background: #f4f5f7; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .card { background: #fff; border-radius: 22px; padding: 56px 44px; text-align: center; max-width: 420px; width: 90%; border: 1px solid #e8e8ec; box-shadow: 0 4px 24px rgba(0,0,0,.08); }
+        .icon { font-size: 56px; margin-bottom: 16px; }
+        h1 { font-family: 'Syne', sans-serif; font-size: 26px; font-weight: 800; color: #1a1a2e; margin-bottom: 10px; }
+        p  { font-size: 14px; color: #888; line-height: 1.6; margin-bottom: 28px; }
+        a  { display: inline-block; padding: 13px 28px; border-radius: 11px; background: linear-gradient(135deg, #7c5cbf, #4ecdc4); color: #fff; font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="icon">⛔</div>
+        <h1>Quiz Link Expired</h1>
+        <p>The quiz <strong>{{ title }}</strong> by <strong>{{ tutor }}</strong> is no longer available. The link has expired.</p>
+        <a href="/">Go to Qslide Home</a>
+    </div>
+</body>
+</html>

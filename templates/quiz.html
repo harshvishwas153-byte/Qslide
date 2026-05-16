@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Qslide - Quiz</title>
+        <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap');
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body { font-family: 'DM Sans', sans-serif; background: #f4f5f7; color: #1a1a2e; min-height: 100vh; }
+
+        /* HEADER */
+        .header {
+            position: sticky; top: 0; z-index: 50;
+            background: #fff; border-bottom: 1px solid #e8e8ec;
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 13px 32px;
+            box-shadow: 0 1px 12px rgba(0,0,0,0.06);
+        }
+        .logo { font-family:'Syne',sans-serif; font-size:20px; font-weight:800; color:#1a1a2e; }
+        .logo span { color:#7c5cbf; }
+        .header-right { display:flex; align-items:center; gap:12px; }
+        .timer-box {
+            display:flex; align-items:center; gap:7px;
+            border:2px solid #ffb3b3; color:#e03030; padding:8px 16px;
+            border-radius:10px; background:#fff5f5; font-weight:700;
+            font-size:14px; font-family:'Syne',sans-serif;
+        }
+        .pdf-btn {
+            display:inline-flex; align-items:center; gap:7px;
+            padding:9px 18px; border-radius:10px;
+            border:1.5px solid #d0c4f0; background:#f3f0ff; color:#7c5cbf;
+            font-family:'Syne',sans-serif; font-size:13px; font-weight:700;
+            cursor:pointer; transition:all 0.2s;
+        }
+        .pdf-btn:hover { background:#ece6ff; transform:translateY(-1px); }
+
+        /* LAYOUT */
+        .layout { display:flex; min-height:calc(100vh - 61px); }
+
+        /* SIDEBAR */
+        .sidebar {
+            width:210px; flex-shrink:0; background:#fff;
+            border-right:1px solid #e8e8ec; padding:20px 14px;
+            position:sticky; top:61px; height:calc(100vh - 61px); overflow-y:auto;
+        }
+        .sidebar-title {
+            font-family:'Syne',sans-serif; font-size:10px; font-weight:700;
+            color:#bbb; letter-spacing:.1em; text-transform:uppercase; margin-bottom:12px;
+        }
+        .progress-wrap { background:#eee; border-radius:999px; height:4px; margin-bottom:14px; }
+        .progress-bar  { height:100%; border-radius:999px; background:linear-gradient(90deg,#7c5cbf,#4ecdc4); transition:width 0.4s; width:0%; }
+        .nav-card {
+            padding:10px 12px; border-radius:10px; border-left:3px solid #e0e0e8;
+            background:#f9f9fb; font-size:13px; color:#888; margin-bottom:6px;
+            cursor:pointer; transition:all 0.2s;
+        }
+        .nav-card strong { color:#1a1a2e; }
+        .nav-card.correct-nav { border-left-color:#22c55e; background:#f0fdf4; color:#166534; }
+        .nav-card.correct-nav strong { color:#166534; }
+        .nav-card.wrong-nav   { border-left-color:#ef4444; background:#fff5f5; color:#991b1b; }
+        .nav-card.wrong-nav strong { color:#991b1b; }
+
+        /* MAIN */
+        .main-content { flex:1; padding:28px 40px; }
+
+        /* QUESTION CARD */
+        .question-card {
+            background:#fff; border-radius:16px; margin-bottom:18px;
+            border:1px solid #e8e8ec; overflow:hidden;
+            box-shadow:0 2px 8px rgba(0,0,0,0.04);
+        }
+        .q-header {
+            display:flex; align-items:center; gap:12px;
+            padding:12px 22px; background:#f9f9fb;
+            border-bottom:1px solid #f0f0f4;
+        }
+        .q-badge {
+            background:#1a1a2e; color:#fff; font-family:'Syne',sans-serif;
+            font-size:11px; font-weight:700; padding:3px 12px; border-radius:999px;
+        }
+        .q-body { padding:22px 26px 18px; }
+        .q-text { font-size:16px; font-weight:500; color:#1a1a2e; line-height:1.6; margin-bottom:18px; }
+
+        /* OPTIONS */
+        .option {
+            display:flex; align-items:center; gap:12px;
+            padding:12px 16px; margin:7px 0;
+            border:1.5px solid #e8e8ec; border-radius:11px;
+            cursor:pointer; font-size:14px; color:#333; background:#fafafa;
+            transition:all 0.15s;
+        }
+        .option:hover { background:#f3f0ff; border-color:#c4b5fd; color:#1a1a2e; }
+        .option.correct { background:#f0fdf4!important; border-color:#22c55e!important; color:#166534!important; font-weight:600; pointer-events:none; }
+        .option.wrong   { background:#fff5f5!important; border-color:#ef4444!important; color:#991b1b!important; pointer-events:none; }
+
+        .feedback { margin-top:10px; font-size:13px; font-weight:500; padding:9px 14px; border-radius:9px; display:none; }
+        .feedback.correct { display:block; color:#166534; background:#dcfce7; border:1px solid #bbf7d0; }
+        .feedback.wrong   { display:block; color:#991b1b; background:#fee2e2; border:1px solid #fecaca; }
+
+        /* REPORT */
+        .report-overlay {
+            display:none; position:fixed; inset:0;
+            background:rgba(0,0,0,0.3); backdrop-filter:blur(4px);
+            z-index:200; align-items:flex-end; justify-content:center;
+        }
+        .report-overlay.show { display:flex; animation:fadeIn 0.2s ease; }
+        @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+        .report-card {
+            background:#fff; border-radius:24px 24px 0 0;
+            width:100%; max-width:760px; max-height:88vh; overflow-y:auto;
+            padding:36px 36px 44px;
+            animation:slideUp 0.3s cubic-bezier(0.16,1,0.3,1);
+            border-top:3px solid #7c5cbf;
+        }
+        @keyframes slideUp{from{transform:translateY(50px);opacity:0}to{transform:translateY(0);opacity:1}}
+        .report-header { text-align:center; margin-bottom:26px; }
+        .report-emoji  { font-size:50px; margin-bottom:8px; }
+        .report-title  { font-family:'Syne',sans-serif; font-size:26px; font-weight:800; color:#1a1a2e; margin-bottom:4px; }
+        .report-sub    { font-size:14px; color:#888; }
+        .score-row { display:flex; gap:12px; margin-bottom:26px; }
+        .score-box { flex:1; background:#f9f9fb; border-radius:14px; padding:18px; text-align:center; border:1px solid #eee; }
+        .score-num { font-family:'Syne',sans-serif; font-size:30px; font-weight:800; }
+        .score-num.g { color:#22c55e; } .score-num.r { color:#ef4444; } .score-num.p { color:#7c5cbf; }
+        .score-label { font-size:12px; color:#aaa; margin-top:3px; }
+        .wrong-title { font-family:'Syne',sans-serif; font-size:15px; font-weight:700; color:#1a1a2e; margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid #f0f0f4; }
+        .wrong-item { background:#fff5f5; border-radius:12px; padding:16px; margin-bottom:10px; border-left:3px solid #ef4444; }
+        .wrong-q { font-size:14px; font-weight:600; color:#1a1a2e; margin-bottom:9px; line-height:1.5; }
+        .ans-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+        .pill { padding:4px 12px; border-radius:999px; font-size:12px; font-weight:600; }
+        .pill.y { background:#fee2e2; color:#991b1b; border:1px solid #fecaca; }
+        .pill.c { background:#dcfce7; color:#166534; border:1px solid #bbf7d0; }
+        .exp-label { font-size:10px; color:#aaa; letter-spacing:.06em; text-transform:uppercase; margin-bottom:5px; }
+        .exp-box { background:#fff; border:1px solid #eee; border-radius:9px; padding:11px 14px; font-size:13px; color:#555; line-height:1.7; min-height:36px; }
+        .exp-box.loading::after { content:'Generating explanation...'; color:#ccc; font-style:italic; }
+        .perfect-msg { text-align:center; padding:22px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px; color:#166534; font-size:14px; margin-bottom:12px; }
+        .r-actions { display:flex; gap:10px; margin-top:18px; }
+        .btn-new { flex:1; padding:13px; border-radius:11px; border:1.5px solid #e0e0e8; background:transparent; color:#888; font-family:'DM Sans',sans-serif; font-size:14px; cursor:pointer; text-decoration:none; display:flex; align-items:center; justify-content:center; transition:all 0.2s; }
+        .btn-new:hover { border-color:#aaa; color:#1a1a2e; }
+        .btn-review { flex:2; padding:13px; border-radius:11px; border:none; background:linear-gradient(135deg,#7c5cbf,#4ecdc4); color:#fff; font-family:'Syne',sans-serif; font-size:14px; font-weight:700; cursor:pointer; transition:all 0.2s; }
+        .btn-review:hover { transform:translateY(-1px); box-shadow:0 6px 20px rgba(124,92,191,0.25); }
+        .btn-pdf { width:100%; padding:13px; border-radius:11px; margin-bottom:10px; border:1.5px solid #d0c4f0; background:#f3f0ff; color:#7c5cbf; font-family:'Syne',sans-serif; font-size:14px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; transition:all 0.2s; }
+        .btn-pdf:hover { background:#ece6ff; transform:translateY(-1px); }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div class="logo">Q<span>slide</span></div>
+    <div class="header-right">
+        <button class="pdf-btn" onclick="downloadPDF()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download PDF
+        </button>
+        <div class="timer-box">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span id="timer">{{ time_limit }}:00</span>
+        </div>
+    </div>
+</div>
+
+<div class="layout">
+    <div class="sidebar">
+        <div class="sidebar-title">Questions</div>
+        <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
+        {% for item in quiz_data %}
+        <div class="nav-card" id="nav-{{ loop.index }}"
+             onclick="document.getElementById('qcard-{{ loop.index }}').scrollIntoView({behavior:'smooth',block:'center'})">
+            <strong>Q{{ loop.index }}</strong><br>
+            <small id="stat-{{ loop.index }}" style="color:#bbb;font-size:11px;">Not answered</small>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="main-content">
+        {% for item in quiz_data %}
+        {% set q_idx = loop.index %}
+        <div class="question-card" id="qcard-{{ q_idx }}">
+            <div class="q-header">
+                <span class="q-badge">Q{{ q_idx }}</span>
+                <span style="font-size:12px;color:#bbb;">Multiple choice</span>
+                <span style="margin-left:auto;font-size:12px;color:#ccc;cursor:pointer;">⚑ Flag</span>
+            </div>
+            <div class="q-body">
+                <div class="q-text">{{ item.question }}</div>
+                <div id="qmain-{{ q_idx }}" data-ans="{{ item.answer }}" data-question="{{ item.question | replace('"','&quot;') }}">
+                    {% for opt in item.options %}
+                    <label class="option" onclick="check(this,{{ q_idx }},'{{ opt | replace("'","\\'") }}')">
+                        <input type="radio" name="q{{ q_idx }}">{{ opt }}
+                    </label>
+                    {% endfor %}
+                    <div id="feed-{{ q_idx }}" class="feedback"></div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+        <div style="height:60px;"></div>
+    </div>
+</div>
+
+<div class="report-overlay" id="reportOverlay">
+    <div class="report-card" id="reportCard"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+    const TOTAL = {{ quiz_data | length }};
+    let answered = 0, correctCount = 0;
+    const wrongItems = [];
+
+    function check(labelEl, idx, sel) {
+        const qm      = document.getElementById('qmain-' + idx);
+        const correct = qm.getAttribute('data-ans').trim();
+        const question= qm.getAttribute('data-question');
+        const fb      = document.getElementById('feed-' + idx);
+        const nav     = document.getElementById('nav-' + idx);
+        const stat    = document.getElementById('stat-' + idx);
+
+        qm.querySelectorAll('input').forEach(i => i.disabled = true);
+        qm.querySelectorAll('.option').forEach(l => l.style.pointerEvents = 'none');
+
+        const ok = sel.trim() === correct.trim();
+        if (ok) {
+            labelEl.classList.add('correct');
+            fb.textContent = '✓ Correct!'; fb.className = 'feedback correct';
+            nav.classList.add('correct-nav');
+            stat.textContent = '✓ Correct'; stat.style.color = '#22c55e';
+            correctCount++;
+        } else {
+            labelEl.classList.add('wrong');
+            fb.textContent = '✗ Incorrect. Correct answer: ' + correct; fb.className = 'feedback wrong';
+            nav.classList.add('wrong-nav');
+            stat.textContent = '✗ Wrong'; stat.style.color = '#ef4444';
+            qm.querySelectorAll('.option').forEach(l => { if (l.textContent.trim() === correct.trim()) l.classList.add('correct'); });
+            wrongItems.push({ q: question, yourAns: sel.trim(), correctAns: correct });
+        }
+        answered++;
+        document.getElementById('progressBar').style.width = ((answered / TOTAL) * 100) + '%';
+        if (answered === TOTAL) setTimeout(showReport, 700);
+    }
+
+    function showReport() {
+        const wrong = TOTAL - correctCount;
+        const pct   = Math.round((correctCount / TOTAL) * 100);
+        const emoji = pct === 100 ? '🏆' : pct >= 70 ? '👍' : pct >= 40 ? '📚' : '💪';
+        const title = pct === 100 ? 'Perfect Score!' : pct >= 70 ? 'Great Job!' : pct >= 40 ? 'Keep Practicing!' : 'Keep Going!';
+
+        let html = `
+            <div class="report-header">
+                <div class="report-emoji">${emoji}</div>
+                <div class="report-title">${title}</div>
+                <div class="report-sub">You completed all ${TOTAL} questions</div>
+            </div>
+            <div class="score-row">
+                <div class="score-box"><div class="score-num g">${correctCount}</div><div class="score-label">Correct</div></div>
+                <div class="score-box"><div class="score-num r">${wrong}</div><div class="score-label">Wrong</div></div>
+                <div class="score-box"><div class="score-num p">${pct}%</div><div class="score-label">Score</div></div>
+            </div>`;
+
+        if (wrong === 0) {
+            html += `<div class="perfect-msg">🎉 You got every question right! Excellent work!</div>`;
+        } else {
+            html += `<div class="wrong-title">❌ Wrong Answers & Explanations</div>`;
+            wrongItems.forEach((item, i) => {
+                html += `<div class="wrong-item" id="wrong-${i}">
+                    <div class="wrong-q">Q: ${item.q}</div>
+                    <div class="ans-row">
+                        <span class="pill y">Your answer: ${item.yourAns}</span>
+                        <span class="pill c">Correct: ${item.correctAns}</span>
+                    </div>
+                    <div class="exp-label">💡 Explanation</div>
+                    <div class="exp-box loading" id="exp-${i}"></div>
+                </div>`;
+            });
+        }
+
+        html += `
+            <button class="btn-pdf" onclick="downloadPDF()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Download MCQ as PDF
+            </button>
+            <div class="r-actions">
+                <a href="/" class="btn-new">← New Quiz</a>
+                <button class="btn-review" onclick="document.getElementById('reportOverlay').classList.remove('show')">Review Answers</button>
+            </div>`;
+
+        document.getElementById('reportCard').innerHTML = html;
+        document.getElementById('reportOverlay').classList.add('show');
+        wrongItems.forEach((item, i) => fetchExplanation(item, i));
+    }
+
+    async function fetchExplanation(item, i) {
+        const box = document.getElementById('exp-' + i);
+        if (!box) return;
+        try {
+            const res  = await fetch('/explain', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ question: item.q, correctAns: item.correctAns, yourAns: item.yourAns }) });
+            const data = await res.json();
+            box.classList.remove('loading');
+            box.textContent = data.explanation || 'The correct answer is: ' + item.correctAns;
+        } catch { box.classList.remove('loading'); box.textContent = 'The correct answer is: ' + item.correctAns; }
+    }
+
+    function downloadPDF() {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+        const pageW = doc.internal.pageSize.getWidth(), pageH = doc.internal.pageSize.getHeight();
+        const margin = 18, usable = pageW - margin * 2;
+        let y = margin;
+
+        function checkPage(n) { if (y + n > pageH - margin) { doc.addPage(); y = margin; } }
+
+        doc.setFillColor(26,26,46); doc.rect(0,0,pageW,36,'F');
+        doc.setFontSize(18); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
+        doc.text('Qslide — MCQ Quiz', margin, 16);
+        doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(180,180,210);
+        doc.text('Generated on ' + new Date().toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'}), margin, 25);
+        doc.setDrawColor(124,92,191); doc.setLineWidth(0.8); doc.line(margin,31,pageW-margin,31);
+        y = 44;
+
+        document.querySelectorAll('[id^="qmain-"]').forEach((qm, idx) => {
+            const question = qm.getAttribute('data-question') || '';
+            const answer   = qm.getAttribute('data-ans') || '';
+            const options  = [...qm.querySelectorAll('.option')].map(l => l.innerText.trim());
+
+            checkPage(24);
+            doc.setFillColor(245,245,250); doc.roundedRect(margin, y-5, usable, 10, 2,2,'F');
+            doc.setFontSize(11); doc.setFont('helvetica','bold'); doc.setTextColor(124,92,191);
+            doc.text('Q'+(idx+1), margin+4, y+2);
+            doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(26,26,46);
+            const qLines = doc.splitTextToSize(question, usable-16);
+            doc.text(qLines, margin+16, y+2);
+            y += qLines.length * 6 + 8;
+
+            ['A','B','C','D','E'].forEach((letter, oi) => {
+                if (!options[oi]) return;
+                checkPage(10);
+                const isCorrect = options[oi] === answer;
+                if (isCorrect) { doc.setFillColor(220,252,231); doc.roundedRect(margin+5, y-4.5, usable-5, 8, 1.5,1.5,'F'); }
+                doc.setFontSize(9.5); doc.setFont('helvetica', isCorrect?'bold':'normal');
+                doc.setTextColor(isCorrect?22:120, isCorrect?101:120, isCorrect?52:130);
+                const oLines = doc.splitTextToSize(letter+')  '+options[oi], usable-18);
+                doc.text(oLines, margin+12, y);
+                if (isCorrect) { doc.setFontSize(9); doc.setTextColor(34,197,94); doc.text('✓', pageW-margin-6, y); }
+                y += oLines.length * 5 + 2;
+            });
+
+            y += 6;
+            if (idx < document.querySelectorAll('[id^="qmain-"]').length - 1) {
+                doc.setDrawColor(230,230,235); doc.setLineWidth(0.3); doc.line(margin, y-2, pageW-margin, y-2); y += 3;
+            }
+        });
+
+        const pages = doc.internal.getNumberOfPages();
+        for (let p = 1; p <= pages; p++) {
+            doc.setPage(p); doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(170,170,170);
+            doc.text('Qslide Quiz  •  Page '+p+' of '+pages, margin, pageH-8);
+            doc.text('✓ = Correct Answer', pageW-margin, pageH-8, {align:'right'});
+        }
+        doc.save('Qslide_MCQ_Quiz.pdf');
+    }
+
+    // Timer
+    let t = {{ time_limit }} * 60;
+    const timerInterval = setInterval(() => {
+        if (t <= 0) { document.getElementById('timer').textContent = "Time's up!"; clearInterval(timerInterval); return; }
+        t--; const m = Math.floor(t/60), s = t%60;
+        document.getElementById('timer').textContent = m+':'+(s<10?'0'+s:s);
+    }, 1000);
+</script>
+</body>
+</html>
