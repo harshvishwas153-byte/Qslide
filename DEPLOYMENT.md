@@ -70,6 +70,47 @@ After it finishes, open:
 http://YOUR_PUBLIC_IP
 ```
 
+## Google Cloud Free Tier VM quick deploy
+
+Use this if you want another free VM option. Check the Google Cloud free tier page before creating resources because free limits can change.
+
+### 1. Create the VM
+
+In Google Cloud Console, create a Compute Engine VM:
+
+- Machine type: **e2-micro**
+- Region: `us-west1`, `us-central1`, or `us-east1`
+- Boot disk image: **Ubuntu**
+- Boot disk type: **Standard persistent disk**
+- Boot disk size: `30 GB`
+- Firewall: enable **Allow HTTP traffic**
+
+Avoid paid extras such as snapshots, larger disks, load balancers, GPUs, or static external IPs unless you understand the billing impact.
+
+### 2. SSH into the VM
+
+Use the **SSH** button in Google Cloud Console, or SSH from your terminal if you configured keys.
+
+### 3. Install Qslide
+
+On the VM:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y git
+git clone -b master https://github.com/harshvishwas153-byte/Qslide.git
+cd Qslide
+bash deploy/gcp_setup.sh
+```
+
+The script will ask for your Gemini API key and create the production service.
+
+After it finishes, open:
+
+```text
+http://YOUR_EXTERNAL_IP
+```
+
 ## Important storage note
 
 The app currently uses SQLite and local file uploads. On hosts with an ephemeral filesystem, data can disappear after restarts or redeploys unless you add persistent storage or move to a managed database.
