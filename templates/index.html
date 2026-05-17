@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Qslide</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+    <!-- Background blobs -->
+    <div class="blob blob-purple"></div>
+    <div class="blob blob-teal"></div>
+
+    <!-- Top bar -->
+    <div class="topbar">
+        <div class="topbar-brand">
+            <span class="brand-dot"></span>
+            <span class="brand-name">Qslide</span>
+        </div>
+        <div class="topbar-right">
+            <button class="icon-btn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </button>
+            <button class="icon-btn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Hero -->
+    <div class="hero">
+        <div class="ready-badge">
+            <span class="badge-dot"></span>
+            READY TO GENERATE
+        </div>
+
+        <h1 class="hero-title">
+            What slides do you want<br>
+            <span class="gradient-text">to quiz today?</span>
+        </h1>
+
+        <!-- Main form -->
+        <form action="/upload" method="post" enctype="multipart/form-data" id="uploadForm">
+            <input type="hidden" name="num_questions" id="numQuestionsInput" value="10">
+            <input type="hidden" name="time_limit" id="timeLimitInput" value="20">
+
+            <!-- File pill -->
+            <div class="file-pill" id="filePill">
+                <span>📎</span>
+                <span id="pillName">file.pptx or file.pdf</span>
+                <span class="pill-x" onclick="removeFile()">✕</span>
+            </div>
+
+            <!-- Search-style input bar -->
+            <div class="input-bar" id="inputBar">
+                <svg class="bar-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <div class="bar-text" id="barText">Upload a PPT or PDF file to generate your quiz...</div>
+                <div class="bar-actions">
+                    <!-- Hidden real file input -->
+                    <input type="file" name="file" id="fileInput" accept=".ppt,.pptx,.pdf" style="display:none;" required>
+                    <label for="fileInput" class="attach-btn" title="Attach PPT or PDF">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                    </label>
+                    <button type="button" class="send-btn" onclick="handleSubmit()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                    </button>
+                </div>
+            </div>
+        </form>
+
+        <!-- Quick chips -->
+        <div class="chips">
+            <button class="chip" onclick="setQ(5)">⚡ 5 Questions</button>
+            <button class="chip" onclick="setQ(10)">📋 10 Questions</button>
+            <button class="chip" onclick="setQ(15)">🎯 15 Questions</button>
+            <button class="chip" onclick="setQ(20)">🔥 20 Questions</button>
+            <button class="chip" onclick="setQ(25)">🚀 25 Questions</button>
+        </div>
+
+        <!-- Status line -->
+        <div class="status-line">
+            <span class="status-dot"></span>
+           -- Qslide is always here for you --
+        </div>
+    </div>
+
+    <!-- Down arrow -->
+    <div class="scroll-arrow">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+    </div>
+
+    <!-- ── LOADING SCREEN ── -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-content">
+            <div class="spinner-wrap">
+                <svg class="spinner-ring" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="6"/>
+                    <circle cx="50" cy="50" r="42" fill="none" stroke="url(#spinGrad)" stroke-width="6"
+                        stroke-linecap="round" stroke-dasharray="80 185" class="spin-arc"/>
+                    <defs>
+                        <linearGradient id="spinGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" stop-color="#a78bfa"/>
+                            <stop offset="100%" stop-color="#4ecdc4"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <div class="spinner-arrow">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="5" y1="12" x2="19" y2="12"/>
+                        <polyline points="12 5 19 12 12 19"/>
+                    </svg>
+                </div>
+            </div>
+            <div class="loading-title">Generating your quiz...</div>
+            <div class="loading-sub" id="loadingMsg">Reading your slides</div>
+            <div class="loading-dots"><span></span><span></span><span></span></div>
+        </div>
+    </div>
+
+    <!-- ── QUESTION COUNT MODAL ── -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal">
+            <div class="modal-icon">🎯</div>
+            <h2 class="modal-title">How many questions?</h2>
+            <p class="modal-sub">Choose how many MCQ questions to generate from your file.</p>
+            <div class="quick-picks">
+                <button class="pick-btn question-pick" onclick="setPick(5)">5</button>
+                <button class="pick-btn question-pick active" onclick="setPick(10)">10</button>
+                <button class="pick-btn question-pick" onclick="setPick(15)">15</button>
+                <button class="pick-btn question-pick" onclick="setPick(20)">20</button>
+            </div>
+            <p class="modal-or">— or enter a custom number —</p>
+            <input type="number" id="customCount" class="modal-input" min="1" max="50" placeholder="e.g. 12" />
+            <p class="modal-sub timer-sub">Choose timer duration</p>
+            <div class="quick-picks">
+                <button class="pick-btn timer-pick" onclick="setTimerPick(10)">10m</button>
+                <button class="pick-btn timer-pick active" onclick="setTimerPick(20)">20m</button>
+                <button class="pick-btn timer-pick" onclick="setTimerPick(30)">30m</button>
+                <button class="pick-btn timer-pick" onclick="setTimerPick(45)">45m</button>
+            </div>
+            <p class="modal-or">-- or enter custom minutes --</p>
+            <input type="number" id="customTimer" class="modal-input" min="1" max="180" placeholder="e.g. 25" />
+            <div class="modal-actions">
+                <button type="button" class="modal-cancel" onclick="closeModal()">Cancel</button>
+                <button type="button" class="modal-confirm" onclick="confirmCount()">Generate Quiz →</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const filePill  = document.getElementById('filePill');
+        const pillName  = document.getElementById('pillName');
+        const barText   = document.getElementById('barText');
+        const overlay   = document.getElementById('modalOverlay');
+        const customInp = document.getElementById('customCount');
+        const customTimer = document.getElementById('customTimer');
+        const numHidden = document.getElementById('numQuestionsInput');
+        const timeHidden = document.getElementById('timeLimitInput');
+        let selectedCount = 10;
+        let selectedTimer = 20;
+
+        fileInput.addEventListener('change', function () {
+            if (this.files[0]) {
+                pillName.textContent = this.files[0].name;
+                filePill.classList.add('show');
+                barText.textContent = 'File attached! Hit → to choose question count.';
+                barText.style.color = '#ececec';
+            }
+        });
+
+        function removeFile() {
+            fileInput.value = '';
+            filePill.classList.remove('show');
+            barText.textContent = 'Upload a PPT or PDF file to generate your quiz...';
+            barText.style.color = '';
+        }
+
+        // Quick chip sets count directly and opens modal
+        function setQ(n) {
+            selectedCount = n;
+            numHidden.value = n;
+            if (!fileInput.files[0]) {
+                barText.textContent = `✓ ${n} questions selected. Now attach a PPT or PDF file!`;
+                barText.style.color = '#7ed4a0';
+                // highlight the chip visually
+                document.querySelectorAll('.chip').forEach(c => c.classList.remove('chip-active'));
+                event.target.classList.add('chip-active');
+            } else {
+                selectedCount = n;
+                numHidden.value = n;
+                showLoader();
+                document.getElementById('uploadForm').submit();
+            }
+        }
+
+        function handleSubmit() {
+            if (!fileInput.files[0]) {
+                barText.textContent = '⚠️ Please attach a PPT or PDF file first!';
+                barText.style.color = '#f08080';
+                document.getElementById('inputBar').classList.add('shake');
+                setTimeout(() => document.getElementById('inputBar').classList.remove('shake'), 400);
+                return;
+            }
+            openModal();
+        }
+
+        function openModal() {
+            overlay.classList.add('show');
+            customInp.value = '';
+            customTimer.value = '';
+            setPick(selectedCount);
+            setTimerPick(selectedTimer);
+        }
+
+        function closeModal() { overlay.classList.remove('show'); }
+
+        function setPick(n) {
+            selectedCount = n;
+            customInp.value = '';
+            document.querySelectorAll('.question-pick').forEach(b =>
+                b.classList.toggle('active', parseInt(b.textContent) === n));
+        }
+
+        function setTimerPick(n) {
+            selectedTimer = n;
+            customTimer.value = '';
+            document.querySelectorAll('.timer-pick').forEach(b =>
+                b.classList.toggle('active', parseInt(b.textContent) === n));
+        }
+
+        customInp.addEventListener('input', function () {
+            if (this.value) {
+                selectedCount = parseInt(this.value);
+                document.querySelectorAll('.question-pick').forEach(b => b.classList.remove('active'));
+            }
+        });
+
+        customTimer.addEventListener('input', function () {
+            if (this.value) {
+                selectedTimer = parseInt(this.value);
+                document.querySelectorAll('.timer-pick').forEach(b => b.classList.remove('active'));
+            }
+        });
+
+        function confirmCount() {
+            const c = parseInt(customInp.value);
+            const timer = parseInt(customTimer.value);
+            if (c && c > 0) selectedCount = c;
+            if (!selectedCount || selectedCount < 1) selectedCount = 10;
+            if (selectedCount > 50) selectedCount = 50;
+            if (timer && timer > 0) selectedTimer = timer;
+            if (!selectedTimer || selectedTimer < 1) selectedTimer = 20;
+            if (selectedTimer > 180) selectedTimer = 180;
+            numHidden.value = selectedCount;
+            timeHidden.value = selectedTimer;
+            closeModal();
+            showLoader();
+            document.getElementById('uploadForm').submit();
+        }
+
+        // ── Loading screen ──
+        const loadingMsgs = [
+            'Reading your slides',
+            'Extracting key concepts',
+            'Crafting questions',
+            'Building answer options',
+            'Almost ready...'
+        ];
+
+        function showLoader() {
+            document.getElementById('loadingOverlay').classList.add('show');
+            let i = 0;
+            const el = document.getElementById('loadingMsg');
+            setInterval(() => {
+                i = (i + 1) % loadingMsgs.length;
+                el.style.opacity = '0';
+                setTimeout(() => {
+                    el.textContent = loadingMsgs[i];
+                    el.style.opacity = '1';
+                }, 300);
+            }, 2200);
+        }
+
+        overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
+    </script>
+</body>
+</html>

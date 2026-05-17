@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Create Quiz — Qslide</title>
+        <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+    <style>
+        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:'DM Sans',sans-serif;background:#f4f5f7;color:#1a1a2e;min-height:100vh}
+        .header{background:#fff;border-bottom:1px solid #e8e8ec;padding:14px 32px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:50;box-shadow:0 1px 12px rgba(0,0,0,.06)}
+        .logo{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:#1a1a2e;text-decoration:none}
+        .logo span{color:#4ecdc4}
+        .header-right{display:flex;gap:10px;align-items:center}
+        .back-btn{font-size:13px;color:#888;text-decoration:none;border:1px solid #e0e0e8;padding:7px 14px;border-radius:8px;transition:all .2s}
+        .back-btn:hover{color:#1a1a2e;border-color:#aaa}
+        .logout-btn{font-size:13px;color:#ef4444;text-decoration:none;border:1px solid #fecaca;padding:7px 14px;border-radius:8px;background:#fff5f5}
+        .container{max-width:860px;margin:0 auto;padding:36px 20px}
+        .page-title{font-family:'Syne',sans-serif;font-size:28px;font-weight:800;color:#1a1a2e;margin-bottom:6px}
+        .page-sub{font-size:14px;color:#888;margin-bottom:32px}
+        .card{background:#fff;border-radius:16px;border:1px solid #e8e8ec;padding:28px;margin-bottom:20px;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+        .card-title{font-family:'Syne',sans-serif;font-size:16px;font-weight:700;color:#1a1a2e;margin-bottom:20px}
+        .form-row{display:flex;gap:16px;flex-wrap:wrap}
+        .form-group{display:flex;flex-direction:column;gap:6px;flex:1;min-width:200px}
+        label{font-size:13px;font-weight:500;color:#555}
+        input[type=text],input[type=number],select{padding:11px 14px;border:1.5px solid #e8e8ec;border-radius:10px;font-family:'DM Sans',sans-serif;font-size:14px;color:#1a1a2e;background:#fafafa;outline:none;transition:border-color .2s}
+        input:focus,select:focus{border-color:#4ecdc4;background:#fff}
+        .q-list{display:flex;flex-direction:column;gap:16px}
+        .q-item{background:#fafafa;border:1.5px solid #e8e8ec;border-radius:14px;padding:20px;position:relative;transition:border-color .2s}
+        .q-item:focus-within{border-color:#a78bfa}
+        .q-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+        .q-num{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:#a78bfa;background:rgba(167,139,250,.1);padding:3px 12px;border-radius:999px}
+        .q-remove{background:none;border:none;color:#ccc;font-size:18px;cursor:pointer;transition:color .2s;padding:2px 6px;border-radius:6px}
+        .q-remove:hover{color:#ef4444;background:#fee2e2}
+        .q-input{width:100%;padding:11px 14px;border:1.5px solid #e0e0e8;border-radius:10px;font-family:'DM Sans',sans-serif;font-size:14px;color:#1a1a2e;background:#fff;outline:none;margin-bottom:14px;transition:border-color .2s}
+        .q-input:focus{border-color:#a78bfa}
+        .marks-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+        .marks-row input{background:#fff}
+        .options-grid{display:flex;flex-direction:column;gap:8px}
+        .option-row{display:flex;gap:8px;align-items:center}
+        .opt-letter{width:30px;height:30px;border-radius:8px;background:#f0f0f4;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#888;flex-shrink:0}
+        .opt-input{flex:1;padding:9px 12px;border:1.5px solid #e0e0e8;border-radius:9px;font-family:'DM Sans',sans-serif;font-size:13px;color:#1a1a2e;background:#fff;outline:none;transition:border-color .2s}
+        .opt-input:focus{border-color:#a78bfa}
+        .opt-radio{accent-color:#22c55e;width:16px;height:16px;cursor:pointer;flex-shrink:0}
+        .opt-radio-label{font-size:11px;color:#aaa;white-space:nowrap}
+        .add-q-btn{width:100%;padding:14px;border-radius:12px;border:2px dashed #d0c4f0;background:rgba(167,139,250,.04);color:#a78bfa;font-family:'Syne',sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;margin-top:4px}
+        .add-q-btn:hover{background:rgba(167,139,250,.1);border-color:#a78bfa}
+        .publish-btn{width:100%;padding:16px;border-radius:14px;border:none;background:linear-gradient(135deg,#7c5cbf,#4ecdc4);color:#fff;font-family:'Syne',sans-serif;font-size:16px;font-weight:800;cursor:pointer;transition:all .2s;margin-top:8px;box-shadow:0 6px 24px rgba(124,92,191,.3);letter-spacing:.02em}
+        .publish-btn:hover{transform:translateY(-2px);box-shadow:0 10px 32px rgba(124,92,191,.4)}
+        .publish-btn:disabled{opacity:.6;cursor:not-allowed;transform:none}
+        .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(6px);z-index:200;align-items:center;justify-content:center}
+        .modal-overlay.show{display:flex;animation:fadeIn .2s ease}
+        @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+        .modal{background:#fff;border-radius:24px;padding:40px 36px;max-width:480px;width:90%;text-align:center;animation:slideUp .3s cubic-bezier(.16,1,.3,1)}
+        @keyframes slideUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+        .modal-icon{font-size:48px;margin-bottom:16px}
+        .modal-title{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;color:#1a1a2e;margin-bottom:8px}
+        .modal-sub{font-size:14px;color:#888;margin-bottom:24px}
+        .link-box{background:#f4f5f7;border:1.5px solid #e0e0e8;border-radius:12px;padding:14px 16px;font-size:13px;color:#555;word-break:break-all;margin-bottom:16px;text-align:left;line-height:1.5}
+        .copy-btn{width:100%;padding:13px;border-radius:11px;border:none;background:linear-gradient(135deg,#7c5cbf,#4ecdc4);color:#fff;font-family:'Syne',sans-serif;font-size:14px;font-weight:700;cursor:pointer;margin-bottom:10px}
+        .results-btn{width:100%;padding:13px;border-radius:11px;border:1.5px solid #e0e0e8;background:transparent;color:#888;font-family:'DM Sans',sans-serif;font-size:14px;cursor:pointer;text-decoration:none;display:block;transition:all .2s;text-align:center}
+        .results-btn:hover{border-color:#aaa;color:#1a1a2e}
+        .dash-btn{width:100%;padding:13px;border-radius:11px;border:1.5px solid #d0c4f0;background:#f3f0ff;color:#7c5cbf;font-family:'Syne',sans-serif;font-size:14px;font-weight:700;cursor:pointer;text-decoration:none;display:block;text-align:center;margin-top:8px}
+        @media (max-width:760px){
+            .header{padding:12px 16px;gap:10px;align-items:flex-start}
+            .header-right{gap:8px;flex-wrap:wrap;justify-content:flex-end}
+            .container{padding:24px 14px}
+            .page-title{font-size:24px}
+            .page-sub{margin-bottom:22px}
+            .card{padding:20px 16px;border-radius:14px}
+            .form-row{display:block}
+            .form-group{min-width:0;margin-bottom:12px}
+            .q-item{padding:16px 14px}
+            .marks-row{grid-template-columns:1fr}
+            .option-row{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:8px}
+            .opt-radio-label{grid-column:2 / 4;margin-left:0}
+            .modal{padding:30px 20px;border-radius:18px}
+        }
+        @media (max-width:420px){
+            .header{flex-direction:column}
+            .header-right{width:100%;justify-content:space-between}
+            .back-btn,.logout-btn{flex:1;text-align:center}
+            .option-row{grid-template-columns:30px minmax(0,1fr)}
+            .opt-radio{grid-column:1 / 2}
+            .opt-radio-label{grid-column:2 / 3}
+        }
+    </style>
+</head>
+<body>
+<div class="header">
+    <a href="/" class="logo">Q<span>slide</span></a>
+    <div class="header-right">
+        <span style="font-size:13px;color:#888;">👋 {{ tutor.name }}</span>
+        <a href="/tutor/dashboard" class="back-btn">← Dashboard</a>
+        <a href="/tutor/logout" class="logout-btn">Logout</a>
+    </div>
+</div>
+
+<div class="container">
+    <div class="page-title">📝 Create a Quiz</div>
+    <p class="page-sub">Write your questions, set the time limit, and share the link with your students.</p>
+
+    <div class="card">
+        <div class="card-title">⚙️ Quiz Settings</div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Quiz Title</label>
+                <input type="text" id="quizTitle" placeholder="e.g. Chapter 3 — Magnetism" />
+            </div>
+        </div>
+        <div class="form-row" style="margin-top:14px;">
+            <div class="form-group">
+                <label>Time Limit (minutes)</label>
+                <input type="number" id="timeLimit" value="10" min="1" max="180" />
+            </div>
+            <div class="form-group">
+                <label>Link Valid For</label>
+                <select id="validityHours">
+                    <option value="1">1 hour</option>
+                    <option value="6">6 hours</option>
+                    <option value="24" selected>24 hours</option>
+                    <option value="48">48 hours</option>
+                    <option value="168">7 days</option>
+                    <option value="720">30 days</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-title">📝 Questions</div>
+        <div class="q-list" id="qList"></div>
+        <button class="add-q-btn" onclick="addQuestion()">＋ Add Question</button>
+    </div>
+
+    <button class="publish-btn" onclick="publishQuiz()">🚀 Publish Quiz & Get Link</button>
+</div>
+
+<div class="modal-overlay" id="successModal">
+    <div class="modal">
+        <div class="modal-icon">🎉</div>
+        <div class="modal-title">Quiz Published!</div>
+        <div class="modal-sub">Share this link with your students</div>
+        <div class="link-box" id="quizLink">—</div>
+        <button class="copy-btn" onclick="copyLink()">📋 Copy Link</button>
+        <a class="results-btn" id="resultsBtn" href="#">📊 View Results</a>
+        <a class="dash-btn" href="/tutor/dashboard">← Back to Dashboard</a>
+    </div>
+</div>
+
+<script>
+    let qCount = 0, publishedLink = '', publishedQuizId = '';
+
+    function addQuestion() {
+        qCount++;
+        const idx = qCount;
+        document.getElementById('qList').insertAdjacentHTML('beforeend', `
+        <div class="q-item" id="qi-${idx}">
+            <div class="q-header">
+                <span class="q-num">Q${idx}</span>
+                <button class="q-remove" onclick="document.getElementById('qi-${idx}').remove()">✕</button>
+            </div>
+            <input class="q-input" type="text" placeholder="Enter your question here..." id="q-text-${idx}" />
+            <div class="marks-row">
+                <div class="form-group">
+                    <label>Marks for this question</label>
+                    <input type="number" id="q-marks-${idx}" value="1" min="0" step="0.5" />
+                </div>
+                <div class="form-group">
+                    <label>Negative marks if wrong</label>
+                    <input type="number" id="q-negative-${idx}" value="0" min="0" step="0.5" />
+                </div>
+            </div>
+            <div class="options-grid">
+                ${['A','B','C','D'].map((l,i)=>`
+                <div class="option-row">
+                    <div class="opt-letter">${l}</div>
+                    <input class="opt-input" type="text" placeholder="Option ${l}" id="q-opt-${idx}-${i}" />
+                    <input class="opt-radio" type="checkbox" name="correct-${idx}" value="${i}" id="q-cor-${idx}-${i}" />
+                    <label class="opt-radio-label" for="q-cor-${idx}-${i}">✓ Correct</label>
+                </div>`).join('')}
+            </div>
+        </div>`);
+    }
+
+    async function publishQuiz() {
+        const title    = document.getElementById('quizTitle').value.trim();
+        const timeLimit= parseInt(document.getElementById('timeLimit').value) || 10;
+        const validity = parseFloat(document.getElementById('validityHours').value);
+        if (!title) { alert('Please enter a quiz title.'); return; }
+
+        const questions = [];
+        for (let item of document.querySelectorAll('.q-item')) {
+            const id = item.id.replace('qi-','');
+            const qText = document.getElementById('q-text-'+id)?.value.trim();
+            if (!qText) { alert('Please fill in all question texts.'); return; }
+            const options = [];
+            for (let i=0;i<4;i++) {
+                const opt = document.getElementById(`q-opt-${id}-${i}`)?.value.trim();
+                if (!opt) { alert(`Please fill all options for Q${id}.`); return; }
+                options.push(opt);
+            }
+            const checked = [...document.querySelectorAll(`input[name="correct-${id}"]:checked`)];
+            if (checked.length === 0) { alert(`Please select at least one correct answer for Q${id}.`); return; }
+            const marks = parseFloat(document.getElementById('q-marks-'+id)?.value);
+            const negativeMarks = parseFloat(document.getElementById('q-negative-'+id)?.value);
+            if (Number.isNaN(marks) || marks < 0) { alert(`Please enter valid marks for Q${id}.`); return; }
+            if (Number.isNaN(negativeMarks) || negativeMarks < 0) { alert(`Please enter valid negative marks for Q${id}.`); return; }
+            const answers = checked.map(input => options[parseInt(input.value)]);
+            questions.push({ question: qText, options, answers, answer: answers[0], marks, negative_marks: negativeMarks });
+        }
+
+        if (questions.length === 0) { alert('Please add at least one question.'); return; }
+
+        const btn = document.querySelector('.publish-btn');
+        btn.textContent = 'Publishing...'; btn.disabled = true;
+
+        const res  = await fetch('/tutor/create', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ title, questions, time_limit: timeLimit, validity_hours: validity }) });
+        const data = await res.json();
+
+        if (data.error) { alert(data.error); btn.textContent='🚀 Publish Quiz & Get Link'; btn.disabled=false; return; }
+
+        publishedLink   = data.link;
+        publishedQuizId = data.quiz_id;
+        document.getElementById('quizLink').textContent = publishedLink;
+        document.getElementById('resultsBtn').href = '/tutor/results/' + publishedQuizId;
+        document.getElementById('successModal').classList.add('show');
+        btn.textContent='🚀 Publish Quiz & Get Link'; btn.disabled=false;
+    }
+
+    function copyLink() {
+        navigator.clipboard.writeText(publishedLink).then(() => {
+            const btn = document.querySelector('.copy-btn');
+            btn.textContent = '✅ Copied!';
+            setTimeout(()=>btn.textContent='📋 Copy Link',2000);
+        });
+    }
+
+    addQuestion();
+</script>
+</body>
+</html>

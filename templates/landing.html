@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Qslide — Choose Your Role</title>
+        <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+    <style>
+        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:'DM Sans',sans-serif;background:#0d0d10;color:#ececec;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;overflow-x:hidden;position:relative}
+        .blob{position:fixed;border-radius:50%;filter:blur(90px);pointer-events:none;z-index:0}
+        .blob-purple{width:500px;height:500px;background:radial-gradient(circle,#6c3fc4,transparent 70%);top:-120px;left:-120px;opacity:.3;animation:b1 12s ease-in-out infinite alternate}
+        .blob-teal{width:400px;height:400px;background:radial-gradient(circle,#0e9e8a,transparent 70%);bottom:-80px;right:-80px;opacity:.3;animation:b2 14s ease-in-out infinite alternate}
+        @keyframes b1{from{transform:translate(0,0) scale(1)}to{transform:translate(60px,40px) scale(1.1)}}
+        @keyframes b2{from{transform:translate(0,0) scale(1)}to{transform:translate(-40px,-60px) scale(1.15)}}
+        .wrap{position:relative;z-index:1;text-align:center;max-width:1020px;width:100%}
+        .badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:500;letter-spacing:.14em;color:#4ecdc4;border:1px solid rgba(78,205,196,.25);background:rgba(78,205,196,.07);padding:6px 14px;border-radius:999px;margin-bottom:24px;animation:fadeUp .5s ease both}
+        .badge-dot{width:6px;height:6px;border-radius:50%;background:#4ecdc4;animation:pulse 1.5s ease-in-out infinite}
+        @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.85)}}
+        h1{font-family:'Syne',sans-serif;font-size:clamp(32px,6vw,54px);font-weight:800;line-height:1.1;margin-bottom:12px;animation:fadeUp .6s .05s ease both}
+        .grad{background:linear-gradient(90deg,#a78bfa,#4ecdc4);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+        .subtitle{font-size:16px;color:#666;margin-bottom:52px;font-weight:300;animation:fadeUp .6s .1s ease both}
+        .cards{display:flex;gap:24px;justify-content:center;flex-wrap:wrap;animation:fadeUp .7s .15s ease both}
+        .role-card{width:300px;background:rgba(255,255,255,0.04);border:1.5px solid rgba(255,255,255,0.08);border-radius:22px;padding:36px 28px;cursor:pointer;text-align:left;text-decoration:none;color:inherit;transition:all 0.25s;position:relative;overflow:hidden;backdrop-filter:blur(10px)}
+        .role-card::before{content:'';position:absolute;inset:0;border-radius:22px;opacity:0;transition:opacity .25s}
+        .role-card.learner::before{background:radial-gradient(circle at top left,rgba(167,139,250,0.12),transparent 60%)}
+        .role-card.tutor::before{background:radial-gradient(circle at top left,rgba(78,205,196,0.12),transparent 60%)}
+        .role-card:hover{transform:translateY(-6px);border-color:rgba(255,255,255,0.18);box-shadow:0 20px 50px rgba(0,0,0,0.4)}
+        .role-card:hover::before{opacity:1}
+        .card-icon{width:56px;height:56px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:26px;margin-bottom:20px}
+        .learner .card-icon{background:rgba(167,139,250,0.15);border:1px solid rgba(167,139,250,0.25)}
+        .tutor .card-icon{background:rgba(78,205,196,0.12);border:1px solid rgba(78,205,196,0.25)}
+        .card-title{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;margin-bottom:8px}
+        .learner .card-title{color:#a78bfa}
+        .tutor .card-title{color:#4ecdc4}
+        .card-desc{font-size:14px;color:#666;line-height:1.6;margin-bottom:24px;font-weight:300}
+        .card-features{display:flex;flex-direction:column;gap:8px;margin-bottom:28px}
+        .feat{display:flex;align-items:center;gap:10px;font-size:13px;color:#aaa}
+        .feat-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+        .learner .feat-dot{background:#a78bfa}
+        .tutor .feat-dot{background:#4ecdc4}
+        .card-btn{width:100%;padding:13px;border-radius:12px;border:none;font-family:'Syne',sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:all 0.2s;letter-spacing:.02em}
+        .learner .card-btn{background:rgba(167,139,250,0.15);color:#a78bfa;border:1.5px solid rgba(167,139,250,0.3)}
+        .learner .card-btn:hover{background:rgba(167,139,250,0.25)}
+        .tutor .card-btn{background:rgba(78,205,196,0.12);color:#4ecdc4;border:1.5px solid rgba(78,205,196,0.3)}
+        .tutor .card-btn:hover{background:rgba(78,205,196,0.22)}
+        .card-number{position:absolute;top:20px;right:24px;font-family:'Syne',sans-serif;font-size:48px;font-weight:800;opacity:.06;color:#fff;line-height:1}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+        @media (max-width:760px){
+            body{justify-content:flex-start;padding:42px 16px 28px}
+            .blob-purple{width:320px;height:320px;top:-90px;left:-110px}
+            .blob-teal{width:280px;height:280px;right:-120px;bottom:-80px}
+            h1{font-size:clamp(32px,12vw,46px);line-height:1.06}
+            .subtitle{font-size:15px;margin-bottom:28px}
+            .cards{gap:14px}
+            .role-card{width:min(100%,360px);padding:26px 22px;border-radius:18px}
+            .card-icon{width:48px;height:48px;border-radius:14px;font-size:22px;margin-bottom:16px}
+            .card-desc{margin-bottom:18px}
+            .card-features{margin-bottom:22px}
+        }
+        @media (max-width:380px){
+            body{padding-left:12px;padding-right:12px}
+            .badge{font-size:10px;padding:6px 12px}
+            .role-card{padding:22px 18px}
+        }
+    </style>
+</head>
+<body>
+    <div class="blob blob-purple"></div>
+    <div class="blob blob-teal"></div>
+    <div class="wrap">
+        <div class="badge"><span class="badge-dot"></span> WHO ARE YOU?</div>
+        <h1>Welcome to <span class="grad">Qslide</span></h1>
+        <p class="subtitle">AI-powered quiz generation from PowerPoint slides</p>
+        <div class="cards">
+            <a href="/learner" class="role-card learner">
+                <div class="card-number">1</div>
+                <div class="card-icon">🎓</div>
+                <div class="card-title">Learner</div>
+                <p class="card-desc">Upload your PPT and get an instant AI-generated quiz to test your knowledge.</p>
+                <div class="card-features">
+                    <div class="feat"><span class="feat-dot"></span>Upload any .pptx file</div>
+                    <div class="feat"><span class="feat-dot"></span>AI generates MCQs instantly</div>
+                    <div class="feat"><span class="feat-dot"></span>Get score + explanations</div>
+                    <div class="feat"><span class="feat-dot"></span>Download quiz as PDF</div>
+                </div>
+                <button class="card-btn">I'm a Learner →</button>
+            </a>
+            <a href="/tutor" class="role-card tutor">
+                <div class="card-number">2</div>
+                <div class="card-icon">🧑‍🏫</div>
+                <div class="card-title">Tutor</div>
+                <p class="card-desc">Create your own quiz, set a timer, share with students and track their results.</p>
+                <div class="card-features">
+                    <div class="feat"><span class="feat-dot"></span>Write your own questions</div>
+                    <div class="feat"><span class="feat-dot"></span>Set quiz time limit</div>
+                    <div class="feat"><span class="feat-dot"></span>Share via unique link</div>
+                    <div class="feat"><span class="feat-dot"></span>See all student results</div>
+                </div>
+                <button class="card-btn">I'm a Tutor →</button>
+            </a>
+        </div>
+    </div>
+</body>
+</html>

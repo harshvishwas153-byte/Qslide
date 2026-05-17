@@ -1,0 +1,14 @@
+.env
+__pycache__/
+*.py[cod]
+*.sqlite
+*.sqlite3
+qslide.db
+uploads/
+.vscode/
+.venv/
+venv/
+env/
+instance/
+.pytest_cache/
+tempCodeRunnerFile.py

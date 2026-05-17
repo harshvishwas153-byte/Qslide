@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Results — {{ quiz.title }}</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+    <style>
+        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:'DM Sans',sans-serif;background:#f4f5f7;color:#1a1a2e;min-height:100vh}
+        .header{background:#fff;border-bottom:1px solid #e8e8ec;padding:13px 32px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:50;box-shadow:0 1px 12px rgba(0,0,0,.06)}
+        .logo{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:#1a1a2e;text-decoration:none}
+        .logo span{color:#4ecdc4}
+        .header-right{display:flex;gap:10px;align-items:center}
+        .back-btn{font-size:13px;color:#888;text-decoration:none;border:1px solid #e0e0e8;padding:7px 14px;border-radius:8px;transition:all .2s}
+        .back-btn:hover{color:#1a1a2e;border-color:#aaa}
+        .logout-btn{font-size:13px;color:#ef4444;text-decoration:none;border:1px solid #fecaca;padding:7px 14px;border-radius:8px;background:#fff5f5}
+        .container{max-width:960px;margin:0 auto;padding:36px 20px}
+        .info-card{background:#fff;border-radius:16px;border:1px solid #e8e8ec;padding:24px 28px;margin-bottom:20px;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+        .info-title{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;color:#1a1a2e;margin-bottom:14px}
+        .info-row{display:flex;gap:24px;flex-wrap:wrap}
+        .info-item{display:flex;flex-direction:column;gap:3px}
+        .info-label{font-size:11px;color:#aaa;text-transform:uppercase;letter-spacing:.06em}
+        .info-value{font-size:14px;font-weight:500;color:#1a1a2e}
+        .link-card{background:linear-gradient(135deg,rgba(124,92,191,.08),rgba(78,205,196,.06));border:1.5px solid rgba(124,92,191,.2);border-radius:14px;padding:18px 22px;margin-bottom:20px;display:flex;align-items:center;gap:14px}
+        .link-text{flex:1;font-size:13px;color:#555;word-break:break-all}
+        .copy-btn{padding:9px 18px;border-radius:9px;border:1.5px solid rgba(124,92,191,.3);background:rgba(124,92,191,.1);color:#7c5cbf;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .2s}
+        .copy-btn:hover{background:rgba(124,92,191,.2)}
+        .expired-badge{background:#fee2e2;color:#991b1b;border:1px solid #fecaca;padding:5px 12px;border-radius:999px;font-size:12px;font-weight:600}
+        .stats-row{display:flex;gap:14px;margin-bottom:24px;flex-wrap:wrap}
+        .stat-box{flex:1;min-width:140px;background:#fff;border-radius:14px;padding:18px;border:1px solid #e8e8ec;box-shadow:0 2px 8px rgba(0,0,0,.04);text-align:center}
+        .stat-num{font-family:'Syne',sans-serif;font-size:28px;font-weight:800}
+        .stat-num.p{color:#7c5cbf}.stat-num.g{color:#22c55e}.stat-num.b{color:#3b82f6}
+        .stat-label{font-size:12px;color:#aaa;margin-top:3px}
+        .section-title{font-family:'Syne',sans-serif;font-size:17px;font-weight:700;color:#1a1a2e;margin-bottom:14px}
+        .sub-card{background:#fff;border-radius:14px;border:1px solid #e8e8ec;padding:16px 22px;margin-bottom:10px;display:flex;align-items:center;gap:16px;box-shadow:0 1px 6px rgba(0,0,0,.03);transition:box-shadow .2s}
+        .sub-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.08)}
+        .sub-rank{width:36px;height:36px;border-radius:10px;background:#f3f0ff;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-size:14px;font-weight:800;color:#7c5cbf;flex-shrink:0}
+        .sub-info{flex:1}
+        .sub-name{font-weight:600;font-size:15px;color:#1a1a2e;margin-bottom:2px}
+        .sub-time{font-size:12px;color:#aaa}
+        .sub-score{text-align:right}
+        .sub-pct{font-family:'Syne',sans-serif;font-size:22px;font-weight:800}
+        .sub-frac{font-size:12px;color:#aaa;margin-top:1px}
+        .sub-bar-wrap{width:100px;height:5px;background:#eee;border-radius:999px;margin-top:5px;margin-left:auto}
+        .sub-bar{height:100%;border-radius:999px}
+        .grade-A{color:#22c55e}.bar-A{background:#22c55e}
+        .grade-B{color:#3b82f6}.bar-B{background:#3b82f6}
+        .grade-C{color:#f59e0b}.bar-C{background:#f59e0b}
+        .grade-D{color:#ef4444}.bar-D{background:#ef4444}
+        .sub-wrap{margin-bottom:12px}
+        .missed-badge{display:inline-flex;align-items:center;margin-top:6px;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:700;background:#fee2e2;color:#b91c1c}
+        .missed-badge.ok{background:#dcfce7;color:#15803d}
+        .review-panel{background:#fff;border:1px solid #e8e8ec;border-radius:14px;margin-top:8px;padding:14px 18px;box-shadow:0 1px 6px rgba(0,0,0,.03)}
+        .review-panel summary{cursor:pointer;font-family:'Syne',sans-serif;font-size:13px;font-weight:800;color:#7c5cbf;list-style:none}
+        .review-panel summary::-webkit-details-marker{display:none}
+        .review-list{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+        .review-item{border:1px solid #ececf1;border-radius:12px;padding:12px 14px;background:#fbfbfd}
+        .review-item.correct{border-color:#bbf7d0;background:#f0fdf4}
+        .review-item.wrong{border-color:#fecaca;background:#fff7f7}
+        .review-head{display:flex;justify-content:space-between;gap:12px;margin-bottom:7px}
+        .review-q{font-size:14px;font-weight:700;color:#1a1a2e;line-height:1.45}
+        .review-status{border-radius:999px;padding:3px 9px;font-size:11px;font-weight:700;white-space:nowrap}
+        .review-status.correct{color:#15803d;background:#dcfce7}
+        .review-status.wrong{color:#b91c1c;background:#fee2e2}
+        .review-line{font-size:12px;color:#666;line-height:1.5;margin-top:4px}
+        .review-line strong{color:#1a1a2e}
+        .empty-msg{text-align:center;padding:60px 20px;color:#bbb;font-size:15px;background:#fff;border-radius:16px;border:1px solid #e8e8ec}
+        @media (max-width:760px){
+            .header{padding:12px 16px;gap:10px;align-items:flex-start}
+            .header-right{gap:8px;flex-wrap:wrap;justify-content:flex-end}
+            .container{padding:24px 14px}
+            .info-card{padding:20px 16px;border-radius:14px}
+            .info-title{font-size:19px;overflow-wrap:anywhere}
+            .info-row{gap:14px}
+            .info-item{min-width:42%}
+            .link-card{align-items:stretch;flex-direction:column;padding:16px}
+            .copy-btn{width:100%}
+            .stats-row{display:grid;grid-template-columns:1fr;gap:10px}
+            .sub-card{align-items:flex-start;padding:16px;gap:12px}
+            .sub-info{min-width:0}
+            .sub-name{overflow-wrap:anywhere}
+            .sub-score{text-align:left;margin-left:auto}
+            .sub-bar-wrap{width:86px}
+            .review-head{flex-direction:column;align-items:flex-start}
+        }
+        @media (max-width:420px){
+            .header{flex-direction:column}
+            .header-right{width:100%;justify-content:space-between}
+            .back-btn,.logout-btn{flex:1;text-align:center}
+            .sub-card{flex-direction:column}
+            .sub-score{width:100%;margin-left:0}
+            .sub-bar-wrap{width:100%;margin-left:0}
+        }
+    </style>
+</head>
+<body>
+<div class="header">
+    <a href="/" class="logo">Q<span>slide</span></a>
+    <div class="header-right">
+        <span style="font-size:13px;color:#888;">👋 {{ tutor.name }}</span>
+        <a href="/tutor/dashboard" class="back-btn">← Dashboard</a>
+        <a href="/tutor/logout" class="logout-btn">Logout</a>
+    </div>
+</div>
+
+<div class="container">
+    <div class="info-card">
+        <div class="info-title">📊 {{ quiz.title }}</div>
+        <div class="info-row">
+            <div class="info-item"><div class="info-label">Quiz ID</div><div class="info-value">{{ quiz.id }}</div></div>
+            <div class="info-item"><div class="info-label">Questions</div><div class="info-value">{{ questions|length }}</div></div>
+            <div class="info-item"><div class="info-label">Time Limit</div><div class="info-value">{{ quiz.time_limit }} min</div></div>
+            <div class="info-item"><div class="info-label">Status</div>
+                <div class="info-value">{% if is_expired %}<span class="expired-badge">⛔ Expired</span>{% else %}<span style="color:#22c55e;font-weight:600;">🟢 Active</span>{% endif %}</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="link-card">
+        <div class="link-text" id="quizLinkText">{{ quiz_link }}</div>
+        {% if not is_expired %}
+        <button class="copy-btn" onclick="copyLink()">📋 Copy Link</button>
+        {% else %}
+        <span class="expired-badge">Link Expired</span>
+        {% endif %}
+    </div>
+
+    {% if submissions %}
+    {% set avg = (submissions|sum(attribute='pct'))//(submissions|length) %}
+    {% set top = submissions|max(attribute='pct') %}
+    <div class="stats-row">
+        <div class="stat-box"><div class="stat-num p">{{ submissions|length }}</div><div class="stat-label">Students</div></div>
+        <div class="stat-box"><div class="stat-num g">{{ avg }}%</div><div class="stat-label">Average Score</div></div>
+        <div class="stat-box"><div class="stat-num b">{{ top.pct }}%</div><div class="stat-label">Highest Score</div></div>
+    </div>
+    {% endif %}
+
+    <div class="section-title">🎓 Student Results</div>
+
+    {% if submissions %}
+        {% for s in submissions %}
+        {% if s.pct >= 80 %}{% set grade='A' %}
+        {% elif s.pct >= 60 %}{% set grade='B' %}
+        {% elif s.pct >= 40 %}{% set grade='C' %}
+        {% else %}{% set grade='D' %}{% endif %}
+        <div class="sub-wrap">
+            <div class="sub-card">
+                <div class="sub-rank">{{ loop.index }}</div>
+                <div class="sub-info">
+                    <div class="sub-name">{{ s.student_name }}</div>
+                    <div class="sub-time">{{ s.submitted_at }}</div>
+                    {% if s.wrong_items %}
+                    <div class="missed-badge">{{ s.wrong_items|length }} wrong / not answered</div>
+                    {% else %}
+                    <div class="missed-badge ok">All answers correct</div>
+                    {% endif %}
+                </div>
+                <div class="sub-score">
+                    <div class="sub-pct grade-{{ grade }}">{{ s.pct }}%</div>
+                    <div class="sub-frac">{{ s.score }} / {{ s.total }} marks</div>
+                    <div class="sub-bar-wrap"><div class="sub-bar bar-{{ grade }}" style="width:{{ s.bar_pct }}%"></div></div>
+                </div>
+            </div>
+            <details class="review-panel">
+                <summary>View question-wise answers</summary>
+                <div class="review-list">
+                    {% for item in s.review %}
+                    <div class="review-item {{ 'correct' if item.is_correct else 'wrong' }}">
+                        <div class="review-head">
+                            <div class="review-q">Q{{ item.index }}. {{ item.question }}</div>
+                            <span class="review-status {{ 'correct' if item.is_correct else 'wrong' }}">
+                                {% if item.is_correct %}Correct{% elif item.is_unanswered %}Not answered{% else %}Wrong{% endif %}
+                            </span>
+                        </div>
+                        <div class="review-line"><strong>Student answer:</strong> {{ item.selected|join(', ') if item.selected else 'Not answered' }}</div>
+                        <div class="review-line"><strong>Correct answer:</strong> {{ item.correct_answers|join(', ') }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </details>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="empty-msg">🕐 No students have taken this quiz yet.<br><small style="margin-top:8px;display:block;">Share the link above to get started.</small></div>
+    {% endif %}
+</div>
+
+<script>
+    function copyLink() {
+        navigator.clipboard.writeText(document.getElementById('quizLinkText').textContent.trim()).then(()=>{
+            const btn = document.querySelector('.copy-btn');
+            btn.textContent='✅ Copied!';
+            setTimeout(()=>btn.textContent='📋 Copy Link',2000);
+        });
+    }
+    setTimeout(()=>location.reload(), 30000);
+</script>
+</body>
+</html>
