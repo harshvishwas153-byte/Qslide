@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Qslide - Quiz</title>
         <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <style>
@@ -141,6 +142,30 @@
         .btn-review:hover { transform:translateY(-1px); box-shadow:0 6px 20px rgba(124,92,191,0.25); }
         .btn-pdf { width:100%; padding:13px; border-radius:11px; margin-bottom:10px; border:1.5px solid #d0c4f0; background:#f3f0ff; color:#7c5cbf; font-family:'Syne',sans-serif; font-size:14px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; transition:all 0.2s; }
         .btn-pdf:hover { background:#ece6ff; transform:translateY(-1px); }
+        @media (max-width:820px){
+            .header{padding:11px 16px;gap:10px;align-items:flex-start}
+            .header-right{gap:8px;flex-wrap:wrap;justify-content:flex-end}
+            .pdf-btn{padding:8px 12px;font-size:12px}
+            .timer-box{padding:7px 12px;font-size:13px}
+            .layout{display:block;min-height:auto}
+            .sidebar{position:sticky;top:58px;z-index:40;width:100%;height:auto;border-right:none;border-bottom:1px solid #e8e8ec;padding:12px 14px;overflow-x:auto;white-space:nowrap}
+            .sidebar-title{display:none}
+            .progress-wrap{margin-bottom:10px}
+            .nav-card{display:inline-block;min-width:96px;margin:0 6px 0 0;vertical-align:top;white-space:normal}
+            .main-content{padding:18px 14px 28px}
+            .q-header{padding:11px 16px;flex-wrap:wrap}
+            .q-body{padding:18px 16px}
+            .q-text{font-size:15px}
+            .option{align-items:flex-start;padding:12px 13px;line-height:1.4}
+            .score-row,.r-actions{flex-direction:column}
+            .report-card{padding:28px 18px 32px;max-height:90vh;border-radius:20px 20px 0 0}
+            .report-title{font-size:22px}
+        }
+        @media (max-width:420px){
+            .header{flex-direction:column}
+            .header-right{width:100%;justify-content:space-between}
+            .pdf-btn,.timer-box{flex:1;justify-content:center}
+        }
     </style>
 </head>
 <body>

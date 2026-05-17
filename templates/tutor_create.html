@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Create Quiz — Qslide</title>
         <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
@@ -60,6 +61,29 @@
         .results-btn{width:100%;padding:13px;border-radius:11px;border:1.5px solid #e0e0e8;background:transparent;color:#888;font-family:'DM Sans',sans-serif;font-size:14px;cursor:pointer;text-decoration:none;display:block;transition:all .2s;text-align:center}
         .results-btn:hover{border-color:#aaa;color:#1a1a2e}
         .dash-btn{width:100%;padding:13px;border-radius:11px;border:1.5px solid #d0c4f0;background:#f3f0ff;color:#7c5cbf;font-family:'Syne',sans-serif;font-size:14px;font-weight:700;cursor:pointer;text-decoration:none;display:block;text-align:center;margin-top:8px}
+        @media (max-width:760px){
+            .header{padding:12px 16px;gap:10px;align-items:flex-start}
+            .header-right{gap:8px;flex-wrap:wrap;justify-content:flex-end}
+            .container{padding:24px 14px}
+            .page-title{font-size:24px}
+            .page-sub{margin-bottom:22px}
+            .card{padding:20px 16px;border-radius:14px}
+            .form-row{display:block}
+            .form-group{min-width:0;margin-bottom:12px}
+            .q-item{padding:16px 14px}
+            .marks-row{grid-template-columns:1fr}
+            .option-row{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:8px}
+            .opt-radio-label{grid-column:2 / 4;margin-left:0}
+            .modal{padding:30px 20px;border-radius:18px}
+        }
+        @media (max-width:420px){
+            .header{flex-direction:column}
+            .header-right{width:100%;justify-content:space-between}
+            .back-btn,.logout-btn{flex:1;text-align:center}
+            .option-row{grid-template-columns:30px minmax(0,1fr)}
+            .opt-radio{grid-column:1 / 2}
+            .opt-radio-label{grid-column:2 / 3}
+        }
     </style>
 </head>
 <body>

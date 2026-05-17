@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Qslide — Choose Your Role</title>
         <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -46,6 +47,23 @@
         .tutor .card-btn:hover{background:rgba(78,205,196,0.22)}
         .card-number{position:absolute;top:20px;right:24px;font-family:'Syne',sans-serif;font-size:48px;font-weight:800;opacity:.06;color:#fff;line-height:1}
         @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+        @media (max-width:760px){
+            body{justify-content:flex-start;padding:42px 16px 28px}
+            .blob-purple{width:320px;height:320px;top:-90px;left:-110px}
+            .blob-teal{width:280px;height:280px;right:-120px;bottom:-80px}
+            h1{font-size:clamp(32px,12vw,46px);line-height:1.06}
+            .subtitle{font-size:15px;margin-bottom:28px}
+            .cards{gap:14px}
+            .role-card{width:min(100%,360px);padding:26px 22px;border-radius:18px}
+            .card-icon{width:48px;height:48px;border-radius:14px;font-size:22px;margin-bottom:16px}
+            .card-desc{margin-bottom:18px}
+            .card-features{margin-bottom:22px}
+        }
+        @media (max-width:380px){
+            body{padding-left:12px;padding-right:12px}
+            .badge{font-size:10px;padding:6px 12px}
+            .role-card{padding:22px 18px}
+        }
     </style>
 </head>
 <body>

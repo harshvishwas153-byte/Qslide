@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Tutor Dashboard — Qslide</title>
        <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
@@ -66,6 +67,29 @@
         .status-badge.active{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0}
         .status-badge.expired{background:#fff5f5;color:#991b1b;border:1px solid #fecaca}
         .empty-msg{text-align:center;padding:60px 20px;color:#bbb;font-size:15px;background:#fff;border-radius:16px;border:1px solid #e8e8ec}
+        @media (max-width:760px){
+            .header{padding:12px 16px;gap:12px;align-items:flex-start}
+            .header-right{gap:8px;flex-wrap:wrap;justify-content:flex-end}
+            .auth-wrap{margin:28px auto;padding:0 14px}
+            .auth-card{padding:28px 20px;border-radius:16px}
+            .id-value{font-size:15px;word-break:break-all}
+            .dash-wrap{padding:24px 14px}
+            .dash-header{align-items:stretch}
+            .dash-header>div,.new-quiz-btn{width:100%}
+            .new-quiz-btn{text-align:center}
+            .quiz-card{align-items:flex-start;padding:16px;gap:12px}
+            .quiz-info{min-width:0}
+            .quiz-title{overflow-wrap:anywhere}
+            .quiz-meta{display:grid;gap:8px}
+            .quiz-actions{width:100%;flex-direction:column}
+            .q-btn{text-align:center;width:100%}
+        }
+        @media (max-width:420px){
+            .header{flex-direction:column}
+            .header-right{width:100%;justify-content:space-between}
+            .quiz-card{flex-direction:column}
+            .quiz-icon{width:40px;height:40px}
+        }
     </style>
 </head>
 <body>

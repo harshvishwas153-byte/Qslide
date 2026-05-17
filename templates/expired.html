@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Quiz Expired — Qslide</title>
         <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400&display=swap" rel="stylesheet">
@@ -12,6 +13,12 @@
         h1 { font-family: 'Syne', sans-serif; font-size: 26px; font-weight: 800; color: #1a1a2e; margin-bottom: 10px; }
         p  { font-size: 14px; color: #888; line-height: 1.6; margin-bottom: 28px; }
         a  { display: inline-block; padding: 13px 28px; border-radius: 11px; background: linear-gradient(135deg, #7c5cbf, #4ecdc4); color: #fff; font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; text-decoration: none; }
+        @media (max-width:480px){
+            body{padding:16px}
+            .card{width:100%;padding:40px 24px;border-radius:18px}
+            h1{font-size:23px}
+            a{width:100%;text-align:center}
+        }
     </style>
 </head>
 <body>
