@@ -55,7 +55,7 @@
             <!-- Search-style input bar -->
             <div class="input-bar" id="inputBar">
                 <svg class="bar-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                <div class="bar-text" id="barText">Upload a PPT or PDF file to generate your quiz...</div>
+                <div class="bar-text" id="barText">Upload a PPT or PDF under {{ max_upload_label }}...</div>
                 <div class="bar-actions">
                     <!-- Hidden real file input -->
                     <input type="file" name="file" id="fileInput" accept=".ppt,.pptx,.pdf" style="display:none;" required>
@@ -158,11 +158,43 @@
         const customTimer = document.getElementById('customTimer');
         const numHidden = document.getElementById('numQuestionsInput');
         const timeHidden = document.getElementById('timeLimitInput');
+        const inputBar = document.getElementById('inputBar');
+        const uploadForm = document.getElementById('uploadForm');
+        const maxUploadBytes = {{ max_upload_bytes }};
+        const maxUploadLabel = "{{ max_upload_label }}";
         let selectedCount = 10;
         let selectedTimer = 20;
+        let isSubmitting = false;
+
+        function showFileMessage(message, color) {
+            barText.textContent = message;
+            barText.style.color = color || '#f08080';
+            inputBar.classList.add('shake');
+            setTimeout(() => inputBar.classList.remove('shake'), 400);
+        }
+
+        function validateSelectedFile() {
+            const file = fileInput.files[0];
+            if (!file) return false;
+            if (file.size > maxUploadBytes) {
+                fileInput.value = '';
+                filePill.classList.remove('show');
+                showFileMessage(`File is too large. Please upload under ${maxUploadLabel}.`);
+                return false;
+            }
+            return true;
+        }
+
+        function submitUpload() {
+            if (isSubmitting || !validateSelectedFile()) return;
+            isSubmitting = true;
+            showLoader();
+            uploadForm.submit();
+        }
 
         fileInput.addEventListener('change', function () {
             if (this.files[0]) {
+                if (!validateSelectedFile()) return;
                 pillName.textContent = this.files[0].name;
                 filePill.classList.add('show');
                 barText.textContent = 'File attached! Hit → to choose question count.';
@@ -173,7 +205,7 @@
         function removeFile() {
             fileInput.value = '';
             filePill.classList.remove('show');
-            barText.textContent = 'Upload a PPT or PDF file to generate your quiz...';
+            barText.textContent = 'Upload a PPT or PDF under {{ max_upload_label }}...';
             barText.style.color = '';
         }
 
@@ -190,8 +222,7 @@
             } else {
                 selectedCount = n;
                 numHidden.value = n;
-                showLoader();
-                document.getElementById('uploadForm').submit();
+                submitUpload();
             }
         }
 
@@ -199,10 +230,11 @@
             if (!fileInput.files[0]) {
                 barText.textContent = '⚠️ Please attach a PPT or PDF file first!';
                 barText.style.color = '#f08080';
-                document.getElementById('inputBar').classList.add('shake');
-                setTimeout(() => document.getElementById('inputBar').classList.remove('shake'), 400);
+                inputBar.classList.add('shake');
+                setTimeout(() => inputBar.classList.remove('shake'), 400);
                 return;
             }
+            if (!validateSelectedFile()) return;
             openModal();
         }
 
@@ -256,8 +288,7 @@
             numHidden.value = selectedCount;
             timeHidden.value = selectedTimer;
             closeModal();
-            showLoader();
-            document.getElementById('uploadForm').submit();
+            submitUpload();
         }
 
         // ── Loading screen ──

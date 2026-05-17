@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }} - Qslide</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            min-height: 100vh;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            color: #f3f5f4;
+            background:
+                radial-gradient(circle at top left, rgba(38, 213, 140, 0.22), transparent 34rem),
+                radial-gradient(circle at bottom right, rgba(14, 158, 138, 0.16), transparent 28rem),
+                #0d0d10;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+        }
+        main {
+            width: min(100%, 520px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(255, 255, 255, 0.055);
+            border-radius: 16px;
+            padding: 28px;
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+        }
+        .eyebrow {
+            color: #4ecdc4;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            margin-bottom: 14px;
+        }
+        h1 {
+            font-size: clamp(26px, 8vw, 42px);
+            line-height: 1.05;
+            margin-bottom: 14px;
+        }
+        p {
+            color: #c8cfcc;
+            font-size: 16px;
+            line-height: 1.55;
+            margin-bottom: 18px;
+        }
+        .detail {
+            color: #aeb6b2;
+            border-left: 3px solid #4ecdc4;
+            padding-left: 12px;
+            font-size: 14px;
+        }
+        a {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 44px;
+            padding: 0 18px;
+            border-radius: 10px;
+            text-decoration: none;
+            color: #08110f;
+            background: #4ecdc4;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <div class="eyebrow">Qslide</div>
+        <h1>{{ title }}</h1>
+        <p>{{ message }}</p>
+        {% if detail %}
+            <p class="detail">{{ detail }}</p>
+        {% endif %}
+        <a href="{{ action_url }}">{{ action_label }}</a>
+    </main>
+</body>
+</html>
