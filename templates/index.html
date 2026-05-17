@@ -55,7 +55,7 @@
             <!-- Search-style input bar -->
             <div class="input-bar" id="inputBar">
                 <svg class="bar-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                <div class="bar-text" id="barText">Upload a PPT or PDF under {{ max_upload_label }}...</div>
+                <div class="bar-text" id="barText">Upload a PPT or PDF...</div>
                 <div class="bar-actions">
                     <!-- Hidden real file input -->
                     <input type="file" name="file" id="fileInput" accept=".ppt,.pptx,.pdf" style="display:none;" required>
@@ -161,7 +161,6 @@
         const inputBar = document.getElementById('inputBar');
         const uploadForm = document.getElementById('uploadForm');
         const maxUploadBytes = {{ max_upload_bytes }};
-        const maxUploadLabel = "{{ max_upload_label }}";
         let selectedCount = 10;
         let selectedTimer = 20;
         let isSubmitting = false;
@@ -179,7 +178,7 @@
             if (file.size > maxUploadBytes) {
                 fileInput.value = '';
                 filePill.classList.remove('show');
-                showFileMessage(`File is too large. Please upload under ${maxUploadLabel}.`);
+                showFileMessage('PPT/PDF is too large. Please choose a smaller PPT or PDF.');
                 return false;
             }
             return true;
@@ -205,7 +204,7 @@
         function removeFile() {
             fileInput.value = '';
             filePill.classList.remove('show');
-            barText.textContent = 'Upload a PPT or PDF under {{ max_upload_label }}...';
+            barText.textContent = 'Upload a PPT or PDF...';
             barText.style.color = '';
         }
 

@@ -6,7 +6,7 @@ from flask import Flask, render_template, request, jsonify, redirect, url_for, a
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 import google.generativeai as genai
-from ppt_utils import extract_text_from_file
+from ppt_utils import compress_upload_for_processing, extract_text_from_file
 from quiz_logic import QuizGenerationError, generate_quiz
 
 app = Flask(__name__)
@@ -14,8 +14,9 @@ app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 IS_VERCEL = os.environ.get("VERCEL") == "1"
 DB_PATH = os.environ.get("DATABASE_PATH", "/tmp/qslide.db" if IS_VERCEL else "qslide.db")
 UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", "/tmp/uploads" if IS_VERCEL else "uploads")
-MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(3_500_000 if IS_VERCEL else 10_000_000)))
-MAX_REQUEST_BYTES = int(os.environ.get("MAX_REQUEST_BYTES", str(MAX_UPLOAD_BYTES + 250_000)))
+COMPRESSED_UPLOAD_TARGET_BYTES = int(os.environ.get("COMPRESSED_UPLOAD_TARGET_BYTES", "3500000"))
+MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(4_000_000 if IS_VERCEL else 25_000_000)))
+MAX_REQUEST_BYTES = int(os.environ.get("MAX_REQUEST_BYTES", str(MAX_UPLOAD_BYTES + 300_000)))
 MAX_TEXT_CHARS = int(os.environ.get("MAX_TEXT_CHARS", "12000"))
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
@@ -26,10 +27,6 @@ if db_dir:
 
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 explain_model = genai.GenerativeModel(os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"))
-
-def format_bytes(num_bytes):
-    mb = num_bytes / 1_000_000
-    return f"{mb:.1f} MB" if mb % 1 else f"{int(mb)} MB"
 
 def render_problem(title, message, status_code=400, detail=None, action_url="/learner", action_label="Try again"):
     return render_template(
@@ -44,8 +41,8 @@ def render_problem(title, message, status_code=400, detail=None, action_url="/le
 @app.errorhandler(RequestEntityTooLarge)
 def handle_large_request(_error):
     return render_problem(
-        "File is too large",
-        f"Please upload a PPTX or PDF under {format_bytes(MAX_UPLOAD_BYTES)}.",
+        "PPT/PDF is too large",
+        "Please upload a smaller PPT or PDF file.",
         status_code=413,
     )
 
@@ -194,15 +191,14 @@ def learner():
     return render_template(
         'index.html',
         max_upload_bytes=MAX_UPLOAD_BYTES,
-        max_upload_label=format_bytes(MAX_UPLOAD_BYTES),
     )
 
 @app.route('/upload', methods=['POST'])
 def upload():
     if request.content_length and request.content_length > MAX_REQUEST_BYTES:
         return render_problem(
-            "File is too large",
-            f"Please upload a PPTX or PDF under {format_bytes(MAX_UPLOAD_BYTES)}.",
+            "PPT/PDF is too large",
+            "Please upload a smaller PPT or PDF file.",
             status_code=413,
         )
 
@@ -229,8 +225,8 @@ def upload():
     file.stream.seek(0)
     if upload_size > MAX_UPLOAD_BYTES:
         return render_problem(
-            "File is too large",
-            f"Please upload a PPTX or PDF under {format_bytes(MAX_UPLOAD_BYTES)}.",
+            "PPT/PDF is too large",
+            "Please upload a smaller PPT or PDF file.",
             status_code=413,
         )
 
@@ -238,6 +234,14 @@ def upload():
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], f"{uuid.uuid4().hex}_{filename}")
     file.save(filepath)
     try:
+        compression = compress_upload_for_processing(filepath, COMPRESSED_UPLOAD_TARGET_BYTES)
+        if not compression.under_target:
+            return render_problem(
+                "PPT/PDF is too large",
+                "Please upload a smaller PPT or PDF file.",
+                status_code=413,
+            )
+
         text = extract_text_from_file(filepath)
         text = re.sub(r'\s+', ' ', text).strip()
         if not text.strip():
