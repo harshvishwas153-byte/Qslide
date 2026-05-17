@@ -3,17 +3,22 @@ load_dotenv()
 import os, re, json, uuid, sqlite3, hashlib, secrets
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, redirect, url_for, abort, session
+from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 import google.generativeai as genai
 from ppt_utils import extract_text_from_file
-from quiz_logic import generate_quiz
+from quiz_logic import QuizGenerationError, generate_quiz
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 IS_VERCEL = os.environ.get("VERCEL") == "1"
 DB_PATH = os.environ.get("DATABASE_PATH", "/tmp/qslide.db" if IS_VERCEL else "qslide.db")
 UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", "/tmp/uploads" if IS_VERCEL else "uploads")
+MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(3_500_000 if IS_VERCEL else 10_000_000)))
+MAX_REQUEST_BYTES = int(os.environ.get("MAX_REQUEST_BYTES", str(MAX_UPLOAD_BYTES + 250_000)))
+MAX_TEXT_CHARS = int(os.environ.get("MAX_TEXT_CHARS", "12000"))
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 db_dir = os.path.dirname(DB_PATH)
 if db_dir:
@@ -21,6 +26,28 @@ if db_dir:
 
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 explain_model = genai.GenerativeModel(os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"))
+
+def format_bytes(num_bytes):
+    mb = num_bytes / 1_000_000
+    return f"{mb:.1f} MB" if mb % 1 else f"{int(mb)} MB"
+
+def render_problem(title, message, status_code=400, detail=None, action_url="/learner", action_label="Try again"):
+    return render_template(
+        "error.html",
+        title=title,
+        message=message,
+        detail=detail,
+        action_url=action_url,
+        action_label=action_label,
+    ), status_code
+
+@app.errorhandler(RequestEntityTooLarge)
+def handle_large_request(_error):
+    return render_problem(
+        "File is too large",
+        f"Please upload a PPTX or PDF under {format_bytes(MAX_UPLOAD_BYTES)}.",
+        status_code=413,
+    )
 
 # ── DATABASE ──
 def get_db():
@@ -164,46 +191,93 @@ def landing():
 # ══════════════════════════════════════════
 @app.route('/learner')
 def learner():
-    return render_template('index.html')
+    return render_template(
+        'index.html',
+        max_upload_bytes=MAX_UPLOAD_BYTES,
+        max_upload_label=format_bytes(MAX_UPLOAD_BYTES),
+    )
 
 @app.route('/upload', methods=['POST'])
 def upload():
+    if request.content_length and request.content_length > MAX_REQUEST_BYTES:
+        return render_problem(
+            "File is too large",
+            f"Please upload a PPTX or PDF under {format_bytes(MAX_UPLOAD_BYTES)}.",
+            status_code=413,
+        )
+
     file = request.files.get('file')
     if not file or not file.filename:
-        return "No file uploaded."
+        return render_problem("No file uploaded", "Please attach a PPTX or PDF file and try again.")
     try:
         num_questions = int(request.form.get('num_questions', 10))
         num_questions = max(1, min(50, num_questions))
-    except:
+    except (TypeError, ValueError):
         num_questions = 10
     try:
         time_limit = int(request.form.get('time_limit', 20))
         time_limit = max(1, min(180, time_limit))
-    except:
+    except (TypeError, ValueError):
         time_limit = 20
 
     allowed_ext = ('.ppt', '.pptx', '.pdf')
     if not file.filename.lower().endswith(allowed_ext):
-        return "<h3>Unsupported file type</h3><p>Please upload a PPTX or PDF file.</p>", 400
+        return render_problem("Unsupported file type", "Please upload a PPTX or PDF file.")
+
+    file.stream.seek(0, os.SEEK_END)
+    upload_size = file.stream.tell()
+    file.stream.seek(0)
+    if upload_size > MAX_UPLOAD_BYTES:
+        return render_problem(
+            "File is too large",
+            f"Please upload a PPTX or PDF under {format_bytes(MAX_UPLOAD_BYTES)}.",
+            status_code=413,
+        )
 
     filename = secure_filename(file.filename)
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], f"{uuid.uuid4().hex}_{filename}")
     file.save(filepath)
     try:
-        text     = extract_text_from_file(filepath)
+        text = extract_text_from_file(filepath)
+        text = re.sub(r'\s+', ' ', text).strip()
         if not text.strip():
-            return "<h3>No readable text found</h3><p>Please upload a text-based PPTX or PDF file.</p>", 400
+            return render_problem(
+                "No readable text found",
+                "Please upload a text-based PPTX or PDF file.",
+            )
+        if len(text) > MAX_TEXT_CHARS:
+            text = text[:MAX_TEXT_CHARS]
         quiz_raw = generate_quiz(text, num_questions)
         match    = re.search(r'\[.*\]', quiz_raw, re.DOTALL)
         if match:
             quiz_data = json.loads(match.group(0))
             return render_template('quiz.html', quiz_data=quiz_data, time_limit=time_limit)
         else:
-            return f"<h3>Quiz generation error</h3><pre>{quiz_raw}</pre>", 502
+            return render_problem(
+                "Quiz generation failed",
+                "The quiz service returned an unexpected response. Please try again with a shorter, clearer file.",
+                status_code=502,
+            )
+    except QuizGenerationError as e:
+        return render_problem(
+            "Quiz generation failed",
+            str(e),
+            status_code=502,
+            action_label="Upload another file",
+        )
     except ValueError as e:
-        return f"<h3>Upload Error</h3><p>{str(e)}</p>", 400
+        return render_problem("Upload error", str(e))
     except Exception:
-        return "<h3>Error</h3><p>Something went wrong while generating the quiz. Please try again.</p>", 500
+        return render_problem(
+            "Something went wrong",
+            "Please try again with a smaller text-based PPTX or PDF file.",
+            status_code=500,
+        )
+    finally:
+        try:
+            os.remove(filepath)
+        except OSError:
+            pass
 
 @app.route('/explain', methods=['POST'])
 def explain():
