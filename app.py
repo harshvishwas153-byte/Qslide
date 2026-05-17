@@ -10,8 +10,9 @@ from quiz_logic import generate_quiz
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
-DB_PATH = os.environ.get("DATABASE_PATH", "qslide.db")
-UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", "uploads")
+IS_VERCEL = os.environ.get("VERCEL") == "1"
+DB_PATH = os.environ.get("DATABASE_PATH", "/tmp/qslide.db" if IS_VERCEL else "qslide.db")
+UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", "/tmp/uploads" if IS_VERCEL else "uploads")
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 db_dir = os.path.dirname(DB_PATH)
