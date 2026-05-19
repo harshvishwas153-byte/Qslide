@@ -55,7 +55,48 @@ def handle_large_request(_error):
     )
 
 # ── DATABASE ──
-init_db()
+DB_INIT_DONE = False
+DB_INIT_ERROR = None
+
+
+def ensure_db_initialized():
+    global DB_INIT_DONE, DB_INIT_ERROR
+    if DB_INIT_DONE:
+        return True
+
+    try:
+        init_db()
+        DB_INIT_DONE = True
+        DB_INIT_ERROR = None
+        return True
+    except Exception as exc:
+        DB_INIT_ERROR = exc
+        return False
+
+
+def database_problem_response():
+    detail = None
+    if DB_INIT_ERROR:
+        detail = (
+            "Check DATABASE_URL in Vercel. Use the Supabase Transaction pooler URL, "
+            "replace [YOUR-PASSWORD], and redeploy."
+        )
+    return render_problem(
+        "Database connection failed",
+        "Qslide could not connect to the production database.",
+        status_code=500,
+        detail=detail,
+        action_url="/",
+        action_label="Back home",
+    )
+
+def database_problem_json():
+    return jsonify({
+        'error': (
+            'Database connection failed. Check DATABASE_URL in Vercel, use the '
+            'Supabase Transaction pooler URL, replace [YOUR-PASSWORD], and redeploy.'
+        )
+    }), 500
 
 def hash_pin(pin):
     return hashlib.sha256(pin.encode()).hexdigest()
@@ -63,6 +104,8 @@ def hash_pin(pin):
 def get_tutor_from_session():
     tutor_id = session.get('tutor_id')
     if not tutor_id:
+        return None
+    if not ensure_db_initialized():
         return None
     db = get_db()
     tutor = db.execute('SELECT * FROM tutors WHERE id=?', (tutor_id,)).fetchone()
@@ -394,6 +437,9 @@ def tutor_register():
     if len(pin) < 4:
         return jsonify({'error': 'PIN must be at least 4 digits'}), 400
 
+    if not ensure_db_initialized():
+        return database_problem_json()
+
     tutor_id   = str(uuid.uuid4())
     pin_hash   = hash_pin(pin)
     created_at = datetime.now().isoformat()
@@ -414,6 +460,9 @@ def tutor_login():
     data     = request.get_json()
     tutor_id = data.get('tutor_id', '').strip()
     pin      = data.get('pin', '').strip()
+
+    if not ensure_db_initialized():
+        return database_problem_json()
 
     db    = get_db()
     tutor = db.execute('SELECT * FROM tutors WHERE id=?', (tutor_id,)).fetchone()
@@ -454,6 +503,8 @@ def tutor_create_page():
 def tutor_create():
     tutor = get_tutor_from_session()
     if not tutor:
+        if session.get('tutor_id') and DB_INIT_ERROR:
+            return database_problem_json()
         return jsonify({'error': 'Not logged in'}), 401
 
     data         = request.get_json()
@@ -486,6 +537,8 @@ def tutor_create():
 def tutor_dashboard():
     tutor = get_tutor_from_session()
     if not tutor:
+        if session.get('tutor_id') and DB_INIT_ERROR:
+            return database_problem_response()
         return redirect('/tutor')
 
     db      = get_db()
@@ -523,6 +576,9 @@ def tutor_dashboard():
 # ══════════════════════════════════════════
 @app.route('/quiz/<quiz_id>')
 def take_quiz(quiz_id):
+    if not ensure_db_initialized():
+        return database_problem_response()
+
     db   = get_db()
     quiz = db.execute('SELECT * FROM quizzes WHERE id=?', (quiz_id,)).fetchone()
     tutor = None
@@ -554,6 +610,9 @@ def submit_quiz(quiz_id):
     student_name = data.get('student_name', 'Anonymous')
     answers      = data.get('answers', {})
 
+    if not ensure_db_initialized():
+        return database_problem_json()
+
     db   = get_db()
     quiz = db.execute('SELECT * FROM quizzes WHERE id=?', (quiz_id,)).fetchone()
     if not quiz:
@@ -584,7 +643,12 @@ def submit_quiz(quiz_id):
 def tutor_results(quiz_id):
     tutor = get_tutor_from_session()
     if not tutor:
+        if session.get('tutor_id') and DB_INIT_ERROR:
+            return database_problem_response()
         return redirect('/tutor?next=/tutor/results/' + quiz_id)
+
+    if not ensure_db_initialized():
+        return database_problem_response()
 
     db   = get_db()
     quiz = db.execute('SELECT * FROM quizzes WHERE id=? AND tutor_id=?',
