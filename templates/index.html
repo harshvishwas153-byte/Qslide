@@ -148,6 +148,9 @@
         </div>
     </div>
 
+    {% if storage_config.enabled %}
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    {% endif %}
     <script>
         const fileInput = document.getElementById('fileInput');
         const filePill  = document.getElementById('filePill');
@@ -161,9 +164,14 @@
         const inputBar = document.getElementById('inputBar');
         const uploadForm = document.getElementById('uploadForm');
         const maxUploadBytes = {{ max_upload_bytes }};
+        const storageConfig = {{ storage_config | tojson }};
+        const storageClient = storageConfig.enabled && window.supabase
+            ? window.supabase.createClient(storageConfig.url, storageConfig.anon_key)
+            : null;
         let selectedCount = 10;
         let selectedTimer = 20;
         let isSubmitting = false;
+        let loadingTimer = null;
 
         function showFileMessage(message, color) {
             barText.textContent = message;
@@ -184,11 +192,70 @@
             return true;
         }
 
-        function submitUpload() {
+        async function submitUpload() {
             if (isSubmitting || !validateSelectedFile()) return;
             isSubmitting = true;
             showLoader();
-            uploadForm.submit();
+            if (!storageConfig.enabled) {
+                uploadForm.submit();
+                return;
+            }
+
+            try {
+                if (!storageClient) {
+                    throw new Error('Upload service did not load. Please refresh and try again.');
+                }
+                await submitStorageUpload();
+            } catch (error) {
+                hideLoader();
+                isSubmitting = false;
+                showFileMessage(error.message || 'Upload failed. Please try again.');
+            }
+        }
+
+        async function submitStorageUpload() {
+            const file = fileInput.files[0];
+            const signRes = await fetch('/storage/sign-upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    filename: file.name,
+                    size: file.size,
+                    content_type: file.type || ''
+                })
+            });
+            const signData = await signRes.json();
+            if (!signRes.ok || signData.error) {
+                throw new Error(signData.error || 'Could not prepare the upload.');
+            }
+
+            setLoadingMessage('Uploading your file');
+            const uploadResult = await storageClient
+                .storage
+                .from(storageConfig.bucket)
+                .uploadToSignedUrl(signData.path, signData.token, file, {
+                    contentType: file.type || 'application/octet-stream'
+                });
+
+            if (uploadResult.error) {
+                throw new Error(uploadResult.error.message || 'Could not upload the file.');
+            }
+
+            setLoadingMessage('Reading your slides');
+            const processRes = await fetch('/upload/storage', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    path: signData.path,
+                    filename: file.name,
+                    num_questions: numHidden.value,
+                    time_limit: timeHidden.value
+                })
+            });
+            const html = await processRes.text();
+            document.open();
+            document.write(html);
+            document.close();
         }
 
         fileInput.addEventListener('change', function () {
@@ -303,7 +370,8 @@
             document.getElementById('loadingOverlay').classList.add('show');
             let i = 0;
             const el = document.getElementById('loadingMsg');
-            setInterval(() => {
+            if (loadingTimer) clearInterval(loadingTimer);
+            loadingTimer = setInterval(() => {
                 i = (i + 1) % loadingMsgs.length;
                 el.style.opacity = '0';
                 setTimeout(() => {
@@ -311,6 +379,17 @@
                     el.style.opacity = '1';
                 }, 300);
             }, 2200);
+        }
+
+        function hideLoader() {
+            document.getElementById('loadingOverlay').classList.remove('show');
+            if (loadingTimer) clearInterval(loadingTimer);
+            loadingTimer = null;
+        }
+
+        function setLoadingMessage(message) {
+            const el = document.getElementById('loadingMsg');
+            if (el) el.textContent = message;
         }
 
         overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });

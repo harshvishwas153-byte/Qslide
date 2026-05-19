@@ -13,6 +13,11 @@ GitHub Pages only hosts static HTML/CSS/JS. Qslide is a Flask app, so it needs a
    - `GEMINI_API_KEY`: your Gemini API key
    - `SECRET_KEY`: a long random string
    - `GEMINI_MODEL`: optional, for example `gemini-2.5-flash`
+   - `DATABASE_URL`: optional Supabase Postgres transaction pooler connection string
+   - `SUPABASE_URL`: optional Supabase project URL
+   - `SUPABASE_ANON_KEY`: optional Supabase anon public key
+   - `SUPABASE_SERVICE_ROLE_KEY`: optional Supabase service role key
+   - `SUPABASE_STORAGE_BUCKET`: optional Supabase Storage bucket, usually `uploads`
 5. Deploy.
 
 ## Oracle Cloud Always Free VM quick deploy

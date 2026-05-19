@@ -1,29 +1,37 @@
 from dotenv import load_dotenv
 load_dotenv()
-import os, re, json, uuid, sqlite3, hashlib, secrets
+import os, re, json, uuid, hashlib, secrets
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, redirect, url_for, abort, session
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 import google.generativeai as genai
+from database import get_db, init_db, json_param, parse_json_field
+from moderation import ModerationError, validate_no_abusive_content
 from ppt_utils import compress_upload_for_processing, extract_text_from_file
 from quiz_logic import QuizGenerationError, generate_quiz
+from storage_utils import (
+    StorageError,
+    create_signed_upload,
+    download_storage_file,
+    make_storage_path,
+    public_storage_config,
+    remove_storage_file,
+    storage_enabled,
+)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 IS_VERCEL = os.environ.get("VERCEL") == "1"
-DB_PATH = os.environ.get("DATABASE_PATH", "/tmp/qslide.db" if IS_VERCEL else "qslide.db")
 UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", "/tmp/uploads" if IS_VERCEL else "uploads")
 COMPRESSED_UPLOAD_TARGET_BYTES = int(os.environ.get("COMPRESSED_UPLOAD_TARGET_BYTES", "3500000"))
-MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(4_000_000 if IS_VERCEL else 25_000_000)))
+DEFAULT_MAX_UPLOAD_BYTES = 50_000_000 if storage_enabled() else (4_000_000 if IS_VERCEL else 25_000_000)
+MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(DEFAULT_MAX_UPLOAD_BYTES)))
 MAX_REQUEST_BYTES = int(os.environ.get("MAX_REQUEST_BYTES", str(MAX_UPLOAD_BYTES + 300_000)))
 MAX_TEXT_CHARS = int(os.environ.get("MAX_TEXT_CHARS", "12000"))
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-db_dir = os.path.dirname(DB_PATH)
-if db_dir:
-    os.makedirs(db_dir, exist_ok=True)
 
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 explain_model = genai.GenerativeModel(os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"))
@@ -47,43 +55,6 @@ def handle_large_request(_error):
     )
 
 # ── DATABASE ──
-def get_db():
-    db = sqlite3.connect(DB_PATH)
-    db.row_factory = sqlite3.Row
-    return db
-
-def init_db():
-    db = get_db()
-    db.executescript('''
-        CREATE TABLE IF NOT EXISTS tutors (
-            id          TEXT PRIMARY KEY,
-            name        TEXT NOT NULL,
-            pin_hash    TEXT NOT NULL,
-            created_at  TEXT
-        );
-        CREATE TABLE IF NOT EXISTS quizzes (
-            id          TEXT PRIMARY KEY,
-            tutor_id    TEXT NOT NULL,
-            title       TEXT,
-            questions   TEXT,
-            time_limit  INTEGER,
-            expires_at  TEXT,
-            created_at  TEXT,
-            FOREIGN KEY (tutor_id) REFERENCES tutors(id)
-        );
-        CREATE TABLE IF NOT EXISTS submissions (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            quiz_id      TEXT,
-            student_name TEXT,
-            answers      TEXT,
-            score        INTEGER,
-            total        INTEGER,
-            submitted_at TEXT
-        );
-    ''')
-    db.commit()
-    db.close()
-
 init_db()
 
 def hash_pin(pin):
@@ -191,7 +162,143 @@ def learner():
     return render_template(
         'index.html',
         max_upload_bytes=MAX_UPLOAD_BYTES,
+        storage_config=public_storage_config(),
     )
+
+def _generation_settings(source):
+    try:
+        num_questions = int(source.get('num_questions', 10))
+        num_questions = max(1, min(50, num_questions))
+    except (TypeError, ValueError):
+        num_questions = 10
+    try:
+        time_limit = int(source.get('time_limit', 20))
+        time_limit = max(1, min(180, time_limit))
+    except (TypeError, ValueError):
+        time_limit = 20
+    return num_questions, time_limit
+
+def _render_quiz_from_file(filepath, num_questions, time_limit, enforce_processing_limit=True):
+    if enforce_processing_limit:
+        compression = compress_upload_for_processing(filepath, COMPRESSED_UPLOAD_TARGET_BYTES)
+        if not compression.under_target:
+            return render_problem(
+                "PPT/PDF is too large",
+                "Please upload a smaller PPT or PDF file.",
+                status_code=413,
+            )
+
+    text = extract_text_from_file(filepath)
+    text = re.sub(r'\s+', ' ', text).strip()
+    if not text.strip():
+        return render_problem(
+            "No readable text found",
+            "Please upload a text-based PPTX or PDF file.",
+        )
+    validate_no_abusive_content(text, "Uploaded file")
+    if len(text) > MAX_TEXT_CHARS:
+        text = text[:MAX_TEXT_CHARS]
+    quiz_raw = generate_quiz(text, num_questions)
+    match    = re.search(r'\[.*\]', quiz_raw, re.DOTALL)
+    if match:
+        quiz_data = json.loads(match.group(0))
+        validate_no_abusive_content(quiz_data, "Generated quiz")
+        return render_template('quiz.html', quiz_data=quiz_data, time_limit=time_limit)
+
+    return render_problem(
+        "Quiz generation failed",
+        "The quiz service returned an unexpected response. Please try again with a shorter, clearer file.",
+        status_code=502,
+    )
+
+@app.route('/storage/sign-upload', methods=['POST'])
+def sign_storage_upload():
+    if not storage_enabled():
+        return jsonify({'error': 'Supabase Storage is not configured.'}), 503
+
+    data = request.get_json() or {}
+    filename = data.get('filename', '')
+    try:
+        size = int(data.get('size', 0))
+    except (TypeError, ValueError):
+        size = 0
+
+    if size > MAX_UPLOAD_BYTES:
+        return jsonify({'error': 'PPT/PDF is too large. Please choose a smaller file.'}), 413
+
+    try:
+        path = make_storage_path(filename)
+        upload = create_signed_upload(path)
+        return jsonify(upload)
+    except StorageError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception:
+        return jsonify({'error': 'Could not prepare the upload. Please try again.'}), 500
+
+@app.route('/upload/storage', methods=['POST'])
+def upload_from_storage():
+    if not storage_enabled():
+        return render_problem(
+            "Upload storage is not configured",
+            "Supabase Storage environment variables are missing.",
+            status_code=503,
+        )
+
+    data = request.get_json() or {}
+    storage_path = data.get('path', '')
+    filename = secure_filename(data.get('filename', '') or os.path.basename(storage_path))
+    num_questions, time_limit = _generation_settings(data)
+
+    if not filename.lower().endswith(('.ppt', '.pptx', '.pdf')):
+        return render_problem("Unsupported file type", "Please upload a PPTX or PDF file.")
+
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], f"{uuid.uuid4().hex}_{filename}")
+    try:
+        file_bytes = download_storage_file(storage_path)
+        if hasattr(file_bytes, "content"):
+            file_bytes = file_bytes.content
+        if isinstance(file_bytes, str):
+            file_bytes = file_bytes.encode()
+
+        with open(filepath, "wb") as output:
+            output.write(file_bytes)
+
+        return _render_quiz_from_file(
+            filepath,
+            num_questions,
+            time_limit,
+            enforce_processing_limit=False,
+        )
+    except QuizGenerationError as e:
+        return render_problem(
+            "Quiz generation failed",
+            str(e),
+            status_code=502,
+            action_label="Upload another file",
+        )
+    except ModerationError as e:
+        return render_problem(
+            "Content blocked",
+            str(e),
+            status_code=400,
+            action_label="Upload another file",
+        )
+    except StorageError as e:
+        return render_problem("Upload error", str(e))
+    except ValueError as e:
+        return render_problem("Upload error", str(e))
+    except Exception:
+        return render_problem(
+            "Something went wrong",
+            "Please try again with a smaller text-based PPTX or PDF file.",
+            status_code=500,
+        )
+    finally:
+        try:
+            os.remove(filepath)
+        except OSError:
+            pass
+        remove_storage_file(storage_path)
 
 @app.route('/upload', methods=['POST'])
 def upload():
@@ -205,16 +312,7 @@ def upload():
     file = request.files.get('file')
     if not file or not file.filename:
         return render_problem("No file uploaded", "Please attach a PPTX or PDF file and try again.")
-    try:
-        num_questions = int(request.form.get('num_questions', 10))
-        num_questions = max(1, min(50, num_questions))
-    except (TypeError, ValueError):
-        num_questions = 10
-    try:
-        time_limit = int(request.form.get('time_limit', 20))
-        time_limit = max(1, min(180, time_limit))
-    except (TypeError, ValueError):
-        time_limit = 20
+    num_questions, time_limit = _generation_settings(request.form)
 
     allowed_ext = ('.ppt', '.pptx', '.pdf')
     if not file.filename.lower().endswith(allowed_ext):
@@ -234,39 +332,19 @@ def upload():
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], f"{uuid.uuid4().hex}_{filename}")
     file.save(filepath)
     try:
-        compression = compress_upload_for_processing(filepath, COMPRESSED_UPLOAD_TARGET_BYTES)
-        if not compression.under_target:
-            return render_problem(
-                "PPT/PDF is too large",
-                "Please upload a smaller PPT or PDF file.",
-                status_code=413,
-            )
-
-        text = extract_text_from_file(filepath)
-        text = re.sub(r'\s+', ' ', text).strip()
-        if not text.strip():
-            return render_problem(
-                "No readable text found",
-                "Please upload a text-based PPTX or PDF file.",
-            )
-        if len(text) > MAX_TEXT_CHARS:
-            text = text[:MAX_TEXT_CHARS]
-        quiz_raw = generate_quiz(text, num_questions)
-        match    = re.search(r'\[.*\]', quiz_raw, re.DOTALL)
-        if match:
-            quiz_data = json.loads(match.group(0))
-            return render_template('quiz.html', quiz_data=quiz_data, time_limit=time_limit)
-        else:
-            return render_problem(
-                "Quiz generation failed",
-                "The quiz service returned an unexpected response. Please try again with a shorter, clearer file.",
-                status_code=502,
-            )
+        return _render_quiz_from_file(filepath, num_questions, time_limit)
     except QuizGenerationError as e:
         return render_problem(
             "Quiz generation failed",
             str(e),
             status_code=502,
+            action_label="Upload another file",
+        )
+    except ModerationError as e:
+        return render_problem(
+            "Content blocked",
+            str(e),
+            status_code=400,
             action_label="Upload another file",
         )
     except ValueError as e:
@@ -289,6 +367,10 @@ def explain():
     question = data.get('question', '')
     correct  = data.get('correctAns', '')
     your_ans = data.get('yourAns', '')
+    try:
+        validate_no_abusive_content([question, correct, your_ans], "Explanation request")
+    except ModerationError:
+        return jsonify({'explanation': 'This explanation could not be generated because the request contains abusive language.'}), 400
     prompt   = f'Question: "{question}"\nCorrect: "{correct}"\nStudent chose: "{your_ans}"\nExplain in 2-3 friendly sentences why the correct answer is right. No bullet points.'
     try:
         response = explain_model.generate_content(prompt)
@@ -317,7 +399,7 @@ def tutor_register():
     created_at = datetime.now().isoformat()
 
     db = get_db()
-    db.execute('INSERT INTO tutors VALUES (?,?,?,?)',
+    db.execute('INSERT INTO tutors (id,name,pin_hash,created_at) VALUES (?,?,?,?)',
                (tutor_id, name, pin_hash, created_at))
     db.commit()
     db.close()
@@ -380,13 +462,18 @@ def tutor_create():
     time_limit   = int(data.get('time_limit', 10))
     validity_hrs = float(data.get('validity_hours', 24))
 
+    try:
+        validate_no_abusive_content({'title': title, 'questions': questions}, "Quiz")
+    except ModerationError as e:
+        return jsonify({'error': str(e)}), 400
+
     quiz_id    = str(uuid.uuid4())[:8].upper()
     expires_at = (datetime.now() + timedelta(hours=validity_hrs)).isoformat()
     created_at = datetime.now().isoformat()
 
     db = get_db()
-    db.execute('INSERT INTO quizzes VALUES (?,?,?,?,?,?,?)',
-               (quiz_id, tutor['id'], title, json.dumps(questions),
+    db.execute('INSERT INTO quizzes (id,tutor_id,title,questions,time_limit,expires_at,created_at) VALUES (?,?,?,?,?,?,?)',
+               (quiz_id, tutor['id'], title, json_param(questions),
                 time_limit, expires_at, created_at))
     db.commit()
     db.close()
@@ -452,7 +539,7 @@ def take_quiz(quiz_id):
                                title=quiz['title'],
                                tutor=tutor['name'] if tutor else 'Tutor')
 
-    questions = json.loads(quiz['questions'])
+    questions = parse_json_field(quiz['questions'], [])
     return render_template('student_quiz.html',
         quiz_id    = quiz_id,
         title      = quiz['title'],
@@ -473,13 +560,13 @@ def submit_quiz(quiz_id):
         db.close()
         return jsonify({'error': 'Quiz not found'}), 404
 
-    questions = [normalize_question(q) for q in json.loads(quiz['questions'])]
+    questions = [normalize_question(q) for q in parse_json_field(quiz['questions'], [])]
     score, total, correct_count, wrong_count = calculate_quiz_score(questions, answers)
     review = build_answer_review(questions, answers)
 
     db.execute(
         'INSERT INTO submissions (quiz_id,student_name,answers,score,total,submitted_at) VALUES (?,?,?,?,?,?)',
-        (quiz_id, student_name, json.dumps(answers), score, total, datetime.now().isoformat())
+        (quiz_id, student_name, json_param(answers), score, total, datetime.now().isoformat())
     )
     db.commit()
     db.close()
@@ -506,7 +593,7 @@ def tutor_results(quiz_id):
         db.close()
         abort(403)  # Forbidden — not their quiz
 
-    questions  = [normalize_question(q) for q in json.loads(quiz['questions'])]
+    questions  = [normalize_question(q) for q in parse_json_field(quiz['questions'], [])]
     subs = db.execute(
         'SELECT * FROM submissions WHERE quiz_id=? ORDER BY submitted_at DESC', (quiz_id,)
     ).fetchall()
@@ -515,16 +602,18 @@ def tutor_results(quiz_id):
     submissions = []
     for s in subs:
         try:
-            submitted_answers = json.loads(s['answers'] or '{}')
+            submitted_answers = parse_json_field(s['answers'], {})
         except (TypeError, json.JSONDecodeError):
             submitted_answers = {}
         review = build_answer_review(questions, submitted_answers)
+        raw_score = float(s['score'] or 0)
+        raw_total = float(s['total'] or 0)
         submissions.append({
             'student_name': s['student_name'],
-            'score':        format_marks(s['score']),
-            'total':        format_marks(s['total']),
-            'pct':          round((s['score']/s['total'])*100) if s['total'] else 0,
-            'bar_pct':      max(0, min(100, round((s['score']/s['total'])*100))) if s['total'] else 0,
+            'score':        format_marks(raw_score),
+            'total':        format_marks(raw_total),
+            'pct':          round((raw_score/raw_total)*100) if raw_total else 0,
+            'bar_pct':      max(0, min(100, round((raw_score/raw_total)*100))) if raw_total else 0,
             'submitted_at': s['submitted_at'][:16].replace('T', ' '),
             'review':       review,
             'wrong_items':  [item for item in review if not item['is_correct']],
