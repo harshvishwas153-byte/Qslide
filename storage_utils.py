@@ -3,6 +3,7 @@ import json
 import uuid
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
+from urllib.parse import urlparse, parse_qs
 from urllib.request import Request, urlopen
 
 from werkzeug.utils import secure_filename
@@ -112,10 +113,20 @@ def create_signed_upload(path):
     data = _storage_request(
         "POST",
         f"/object/upload/sign/{bucket}/{object_path}",
-        {"expiresIn": 7200},
+        {},
     )
+    signed_url = (
+        data.get("signedURL")
+        or data.get("signedUrl")
+        or data.get("signed_url")
+        or data.get("url")
+    )
+    if signed_url and signed_url.startswith("/"):
+        signed_url = _storage_url(signed_url)
+
     token = data.get("token") or data.get("Token")
-    signed_url = data.get("signedURL") or data.get("signedUrl") or data.get("signed_url")
+    if not token and signed_url:
+        token = (parse_qs(urlparse(signed_url).query).get("token") or [""])[0]
 
     if not token:
         raise StorageError("Could not create a Supabase upload token.")
