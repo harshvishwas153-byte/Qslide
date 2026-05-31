@@ -1,11 +1,28 @@
 import json
 import os
 import sqlite3
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 
 IS_VERCEL = os.environ.get("VERCEL") == "1"
 DB_PATH = os.environ.get("DATABASE_PATH", "/tmp/qslide.db" if IS_VERCEL else "qslide.db")
-DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+
+
+def _normalize_database_url(value):
+    url = str(value or "").strip().strip('"').strip("'")
+    if not url:
+        return ""
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+
+    parsed = urlparse(url)
+    if parsed.scheme.startswith("postgres") and "sslmode" not in dict(parse_qsl(parsed.query)):
+        query = urlencode([*parse_qsl(parsed.query), ("sslmode", "require")])
+        url = urlunparse(parsed._replace(query=query))
+    return url
+
+
+DATABASE_URL = _normalize_database_url(os.environ.get("DATABASE_URL", ""))
 
 
 def using_postgres():

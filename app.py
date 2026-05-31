@@ -77,12 +77,9 @@ def ensure_db_initialized():
 
 
 def database_problem_response():
-    detail = None
+    detail = "Check DATABASE_URL in Vercel. Use the Supabase Transaction pooler URL, replace [YOUR-PASSWORD], and redeploy."
     if DB_INIT_ERROR:
-        detail = (
-            "Check DATABASE_URL in Vercel. Use the Supabase Transaction pooler URL, "
-            "replace [YOUR-PASSWORD], and redeploy."
-        )
+        detail = public_error_message(DB_INIT_ERROR, detail)
     return render_problem(
         "Database connection failed",
         "Qslide could not connect to the production database.",
@@ -93,11 +90,11 @@ def database_problem_response():
     )
 
 def database_problem_json():
+    detail = "Check DATABASE_URL in Vercel. Use the Supabase Transaction pooler URL, replace [YOUR-PASSWORD], and redeploy."
+    if DB_INIT_ERROR:
+        detail = public_error_message(DB_INIT_ERROR, detail)
     return jsonify({
-        'error': (
-            'Database connection failed. Check DATABASE_URL in Vercel, use the '
-            'Supabase Transaction pooler URL, replace [YOUR-PASSWORD], and redeploy.'
-        )
+        'error': 'Database connection failed: ' + detail
     }), 500
 
 def _parse_iso_datetime(value):
