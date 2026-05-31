@@ -148,6 +148,25 @@ def learner_ban_json(banned_until):
         'remaining_minutes': ban_remaining_minutes(banned_until),
     }), 403
 
+def public_error_message(error, fallback="Something went wrong. Please try again."):
+    message = str(error or "").strip()
+    if not message:
+        return fallback
+
+    secret_values = [
+        os.environ.get("GEMINI_API_KEY", ""),
+        os.environ.get("SUPABASE_ANON_KEY", ""),
+        os.environ.get("SUPABASE_SERVICE_ROLE_KEY", ""),
+        os.environ.get("DATABASE_URL", ""),
+        app.secret_key,
+    ]
+    for secret in secret_values:
+        secret = str(secret or "").strip()
+        if secret and secret in message:
+            message = message.replace(secret, "[hidden]")
+
+    return message[:240]
+
 def hash_pin(pin):
     return hashlib.sha256(pin.encode()).hexdigest()
 
@@ -349,8 +368,11 @@ def sign_storage_upload():
         return jsonify(upload)
     except StorageError as e:
         return jsonify({'error': str(e)}), 400
-    except Exception:
-        return jsonify({'error': 'Could not prepare the upload. Please try again.'}), 500
+    except Exception as e:
+        app.logger.exception("Could not create Supabase signed upload URL")
+        return jsonify({
+            'error': 'Could not prepare the upload: ' + public_error_message(e),
+        }), 500
 
 @app.route('/upload/storage', methods=['POST'])
 def upload_from_storage():
