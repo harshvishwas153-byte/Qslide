@@ -228,12 +228,24 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="{{ url_for('static', filename='proctoring.js') }}"></script>
 <script>
     const TOTAL = {{ quiz_data | length }};
     let answered = 0, correctCount = 0;
     const wrongItems = [];
+    let learnerQuizEnded = false;
+    let timerInterval;
+    const learnerProctoring = window.QslideProctoring
+        ? window.QslideProctoring.create({
+            mode: 'learner',
+            targetSelector: '.layout',
+            onViolation: endLearnerQuizForScreenChange
+        })
+        : null;
 
     function check(labelEl, idx, sel) {
+        if (learnerQuizEnded) return;
         const qm      = document.getElementById('qmain-' + idx);
         const correct = qm.getAttribute('data-ans').trim();
         const question= qm.getAttribute('data-question');
@@ -264,7 +276,45 @@
         if (answered === TOTAL) setTimeout(showReport, 700);
     }
 
+    async function endLearnerQuizForScreenChange() {
+        if (learnerQuizEnded) return;
+        learnerQuizEnded = true;
+        clearInterval(timerInterval);
+        document.querySelectorAll('input, button').forEach(el => {
+            if (!el.closest('.screen-block-overlay')) el.disabled = true;
+        });
+        document.querySelectorAll('.option').forEach(el => {
+            el.style.pointerEvents = 'none';
+        });
+
+        let bannedUntilMs = Date.now() + (30 * 60 * 1000);
+        window.QslideProctoring?.setLearnerBanUntil(bannedUntilMs);
+
+        try {
+            const res = await fetch('/learner/screen-change-ban', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ detected_count: 1 })
+            });
+            const data = await res.json();
+            const serverUntil = Date.parse(data.banned_until || '');
+            if (serverUntil) {
+                bannedUntilMs = serverUntil;
+                window.QslideProctoring?.setLearnerBanUntil(bannedUntilMs);
+            }
+        } catch (_) {}
+
+        const untilText = window.QslideProctoring
+            ? window.QslideProctoring.formatBanTime(bannedUntilMs)
+            : new Date(bannedUntilMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        window.QslideProctoring?.showLearnerBlock(
+            `Your quiz has ended. Learner mode is blocked for 30 minutes, until ${untilText}.`
+        );
+    }
+
     function showReport() {
+        if (learnerQuizEnded) return;
+        learnerProctoring?.stop();
         const wrong = TOTAL - correctCount;
         const pct   = Math.round((correctCount / TOTAL) * 100);
         const emoji = pct === 100 ? '🏆' : pct >= 70 ? '👍' : pct >= 40 ? '📚' : '💪';
@@ -385,8 +435,9 @@
     }
 
     // Timer
+    learnerProctoring?.start();
     let t = {{ time_limit }} * 60;
-    const timerInterval = setInterval(() => {
+    timerInterval = setInterval(() => {
         if (t <= 0) { document.getElementById('timer').textContent = "Time's up!"; clearInterval(timerInterval); return; }
         t--; const m = Math.floor(t/60), s = t%60;
         document.getElementById('timer').textContent = m+':'+(s<10?'0'+s:s);

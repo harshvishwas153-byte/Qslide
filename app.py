@@ -1,5 +1,6 @@
+from pathlib import Path
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(Path(__file__).with_name(".env"), override=True)
 import os, re, json, uuid, hashlib, secrets
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, redirect, url_for, abort, session
@@ -29,6 +30,7 @@ DEFAULT_MAX_UPLOAD_BYTES = 50_000_000 if storage_enabled() else (4_000_000 if IS
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(DEFAULT_MAX_UPLOAD_BYTES)))
 MAX_REQUEST_BYTES = int(os.environ.get("MAX_REQUEST_BYTES", str(MAX_UPLOAD_BYTES + 300_000)))
 MAX_TEXT_CHARS = int(os.environ.get("MAX_TEXT_CHARS", "12000"))
+LEARNER_SCREEN_CHANGE_BAN_MINUTES = 30
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -97,6 +99,54 @@ def database_problem_json():
             'Supabase Transaction pooler URL, replace [YOUR-PASSWORD], and redeploy.'
         )
     }), 500
+
+def _parse_iso_datetime(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+
+def active_learner_ban_until():
+    banned_until = _parse_iso_datetime(session.get('learner_banned_until'))
+    if banned_until and banned_until > datetime.now():
+        return banned_until
+    if banned_until:
+        session.pop('learner_banned_until', None)
+    return None
+
+def set_learner_screen_change_ban():
+    banned_until = datetime.now() + timedelta(minutes=LEARNER_SCREEN_CHANGE_BAN_MINUTES)
+    session['learner_banned_until'] = banned_until.isoformat()
+    return banned_until
+
+def ban_remaining_minutes(banned_until):
+    remaining_seconds = max(0, int((banned_until - datetime.now()).total_seconds()))
+    return max(1, (remaining_seconds + 59) // 60)
+
+def learner_ban_message(banned_until):
+    return (
+        "Screen change detection ended your learner quiz. "
+        f"You can use learner mode again in about {ban_remaining_minutes(banned_until)} minutes."
+    )
+
+def learner_ban_response(banned_until):
+    return render_problem(
+        "Learner mode temporarily blocked",
+        learner_ban_message(banned_until),
+        status_code=403,
+        detail=f"Blocked until {banned_until.strftime('%Y-%m-%d %H:%M')}.",
+        action_url="/",
+        action_label="Back home",
+    )
+
+def learner_ban_json(banned_until):
+    return jsonify({
+        'error': learner_ban_message(banned_until),
+        'banned_until': banned_until.isoformat(),
+        'remaining_minutes': ban_remaining_minutes(banned_until),
+    }), 403
 
 def hash_pin(pin):
     return hashlib.sha256(pin.encode()).hexdigest()
@@ -190,6 +240,13 @@ def format_marks(value):
         return value
     return int(value) if value.is_integer() else round(value, 2)
 
+def safe_int(value, default=0, minimum=0, maximum=999):
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(maximum, number))
+
 # ══════════════════════════════════════════
 #  LANDING PAGE
 # ══════════════════════════════════════════
@@ -202,11 +259,24 @@ def landing():
 # ══════════════════════════════════════════
 @app.route('/learner')
 def learner():
+    banned_until = active_learner_ban_until()
+    if banned_until:
+        return learner_ban_response(banned_until)
+
     return render_template(
         'index.html',
         max_upload_bytes=MAX_UPLOAD_BYTES,
         storage_config=public_storage_config(),
     )
+
+@app.route('/learner/screen-change-ban', methods=['POST'])
+def learner_screen_change_ban():
+    banned_until = set_learner_screen_change_ban()
+    return jsonify({
+        'success': True,
+        'banned_until': banned_until.isoformat(),
+        'remaining_minutes': ban_remaining_minutes(banned_until),
+    })
 
 def _generation_settings(source):
     try:
@@ -256,6 +326,10 @@ def _render_quiz_from_file(filepath, num_questions, time_limit, enforce_processi
 
 @app.route('/storage/sign-upload', methods=['POST'])
 def sign_storage_upload():
+    banned_until = active_learner_ban_until()
+    if banned_until:
+        return learner_ban_json(banned_until)
+
     if not storage_enabled():
         return jsonify({'error': 'Supabase Storage is not configured.'}), 503
 
@@ -280,6 +354,10 @@ def sign_storage_upload():
 
 @app.route('/upload/storage', methods=['POST'])
 def upload_from_storage():
+    banned_until = active_learner_ban_until()
+    if banned_until:
+        return learner_ban_response(banned_until)
+
     if not storage_enabled():
         return render_problem(
             "Upload storage is not configured",
@@ -345,6 +423,10 @@ def upload_from_storage():
 
 @app.route('/upload', methods=['POST'])
 def upload():
+    banned_until = active_learner_ban_until()
+    if banned_until:
+        return learner_ban_response(banned_until)
+
     if request.content_length and request.content_length > MAX_REQUEST_BYTES:
         return render_problem(
             "PPT/PDF is too large",
@@ -609,6 +691,8 @@ def submit_quiz(quiz_id):
     data         = request.get_json()
     student_name = data.get('student_name', 'Anonymous')
     answers      = data.get('answers', {})
+    screen_change_count = safe_int(data.get('screen_change_count'), default=0)
+    proctoring_status = 'red_tag' if screen_change_count > 2 else 'clear'
 
     if not ensure_db_initialized():
         return database_problem_json()
@@ -624,8 +708,21 @@ def submit_quiz(quiz_id):
     review = build_answer_review(questions, answers)
 
     db.execute(
-        'INSERT INTO submissions (quiz_id,student_name,answers,score,total,submitted_at) VALUES (?,?,?,?,?,?)',
-        (quiz_id, student_name, json_param(answers), score, total, datetime.now().isoformat())
+        (
+            'INSERT INTO submissions '
+            '(quiz_id,student_name,answers,score,total,submitted_at,screen_change_count,proctoring_status) '
+            'VALUES (?,?,?,?,?,?,?,?)'
+        ),
+        (
+            quiz_id,
+            student_name,
+            json_param(answers),
+            score,
+            total,
+            datetime.now().isoformat(),
+            screen_change_count,
+            proctoring_status,
+        )
     )
     db.commit()
     db.close()
@@ -636,6 +733,8 @@ def submit_quiz(quiz_id):
         'wrong': wrong_count,
         'questions': len(questions),
         'review': review,
+        'screen_change_count': screen_change_count,
+        'proctoring_status': proctoring_status,
     })
 
 # Tutor results — protected by session
@@ -672,6 +771,8 @@ def tutor_results(quiz_id):
         review = build_answer_review(questions, submitted_answers)
         raw_score = float(s['score'] or 0)
         raw_total = float(s['total'] or 0)
+        screen_change_count = safe_int(s['screen_change_count'], default=0)
+        proctoring_status = s['proctoring_status'] or ('red_tag' if screen_change_count > 2 else 'clear')
         submissions.append({
             'student_name': s['student_name'],
             'score':        format_marks(raw_score),
@@ -681,6 +782,9 @@ def tutor_results(quiz_id):
             'submitted_at': s['submitted_at'][:16].replace('T', ' '),
             'review':       review,
             'wrong_items':  [item for item in review if not item['is_correct']],
+            'screen_change_count': screen_change_count,
+            'proctoring_status': proctoring_status,
+            'is_red_tag': proctoring_status == 'red_tag',
         })
 
     expires_at = datetime.fromisoformat(quiz['expires_at'])
@@ -691,6 +795,7 @@ def tutor_results(quiz_id):
         tutor      = dict(tutor),
         questions  = questions,
         submissions= submissions,
+        red_tag_count = len([s for s in submissions if s['is_red_tag']]),
         is_expired = is_expired,
         quiz_link  = request.host_url + 'quiz/' + quiz_id
     )

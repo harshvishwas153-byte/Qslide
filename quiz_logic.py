@@ -1,8 +1,11 @@
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
 import google.generativeai as genai
 
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-model = genai.GenerativeModel(os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"))
+ENV_PATH = Path(__file__).with_name(".env")
+DEFAULT_MODEL = "gemini-2.5-flash"
 
 
 class QuizGenerationError(Exception):
@@ -20,14 +23,21 @@ def _friendly_api_error(error):
     if "429" in message or "resource_exhausted" in lowered or "quota" in lowered:
         return "Gemini rate limit or quota was reached. Please wait a little and try again."
     if "api key" in lowered:
-        return "The Gemini API key is missing or invalid. Add a valid GEMINI_API_KEY in Vercel."
+        return "The Gemini API key is missing or invalid. Add a valid GEMINI_API_KEY to .env, then try again."
     return "Gemini could not generate the quiz right now. Please try again in a moment."
 
 
-def generate_quiz(text, num_questions=10):
-    if not os.environ.get("GEMINI_API_KEY"):
-        raise QuizGenerationError("The Gemini API key is missing. Add GEMINI_API_KEY in Vercel and redeploy.")
+def _gemini_model():
+    load_dotenv(ENV_PATH, override=True)
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        raise QuizGenerationError("The Gemini API key is missing. Add GEMINI_API_KEY to .env, then try again.")
 
+    genai.configure(api_key=api_key)
+    return genai.GenerativeModel(os.environ.get("GEMINI_MODEL", DEFAULT_MODEL))
+
+
+def generate_quiz(text, num_questions=10):
     prompt = f"""
 You are a quiz generator. Create exactly {num_questions} multiple choice questions from the slide content below.
 
@@ -55,7 +65,7 @@ Use this only as source material:
 </SLIDES>
 """
     try:
-        response = model.generate_content(prompt)
+        response = _gemini_model().generate_content(prompt)
         return response.text
     except Exception as e:
         raise QuizGenerationError(_friendly_api_error(e)) from e

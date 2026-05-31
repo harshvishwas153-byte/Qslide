@@ -30,7 +30,7 @@
         .stats-row{display:flex;gap:14px;margin-bottom:24px;flex-wrap:wrap}
         .stat-box{flex:1;min-width:140px;background:#fff;border-radius:14px;padding:18px;border:1px solid #e8e8ec;box-shadow:0 2px 8px rgba(0,0,0,.04);text-align:center}
         .stat-num{font-family:'Syne',sans-serif;font-size:28px;font-weight:800}
-        .stat-num.p{color:#7c5cbf}.stat-num.g{color:#22c55e}.stat-num.b{color:#3b82f6}
+        .stat-num.p{color:#7c5cbf}.stat-num.g{color:#22c55e}.stat-num.b{color:#3b82f6}.stat-num.danger{color:#dc2626}
         .stat-label{font-size:12px;color:#aaa;margin-top:3px}
         .section-title{font-family:'Syne',sans-serif;font-size:17px;font-weight:700;color:#1a1a2e;margin-bottom:14px}
         .sub-card{background:#fff;border-radius:14px;border:1px solid #e8e8ec;padding:16px 22px;margin-bottom:10px;display:flex;align-items:center;gap:16px;box-shadow:0 1px 6px rgba(0,0,0,.03);transition:box-shadow .2s}
@@ -51,6 +51,8 @@
         .sub-wrap{margin-bottom:12px}
         .missed-badge{display:inline-flex;align-items:center;margin-top:6px;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:700;background:#fee2e2;color:#b91c1c}
         .missed-badge.ok{background:#dcfce7;color:#15803d}
+        .screen-tag{display:inline-flex;align-items:center;margin-top:6px;margin-left:6px;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:800;background:#dc2626;color:#fff;border:1px solid #991b1b}
+        .screen-note{display:inline-flex;align-items:center;margin-top:6px;margin-left:6px;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:700;background:#fff7ed;color:#c2410c;border:1px solid #fed7aa}
         .review-panel{background:#fff;border:1px solid #e8e8ec;border-radius:14px;margin-top:8px;padding:14px 18px;box-shadow:0 1px 6px rgba(0,0,0,.03)}
         .review-panel summary{cursor:pointer;font-family:'Syne',sans-serif;font-size:13px;font-weight:800;color:#7c5cbf;list-style:none}
         .review-panel summary::-webkit-details-marker{display:none}
@@ -133,6 +135,7 @@
         <div class="stat-box"><div class="stat-num p">{{ submissions|length }}</div><div class="stat-label">Students</div></div>
         <div class="stat-box"><div class="stat-num g">{{ avg }}%</div><div class="stat-label">Average Score</div></div>
         <div class="stat-box"><div class="stat-num b">{{ top.pct }}%</div><div class="stat-label">Highest Score</div></div>
+        <div class="stat-box"><div class="stat-num danger">{{ red_tag_count }}</div><div class="stat-label">Red Tags</div></div>
     </div>
     {% endif %}
 
@@ -154,6 +157,11 @@
                     <div class="missed-badge">{{ s.wrong_items|length }} wrong / not answered</div>
                     {% else %}
                     <div class="missed-badge ok">All answers correct</div>
+                    {% endif %}
+                    {% if s.is_red_tag %}
+                    <div class="screen-tag">Red tag: {{ s.screen_change_count }} screen changes</div>
+                    {% elif s.screen_change_count %}
+                    <div class="screen-note">{{ s.screen_change_count }} screen change{{ 's' if s.screen_change_count != 1 }}</div>
                     {% endif %}
                 </div>
                 <div class="sub-score">

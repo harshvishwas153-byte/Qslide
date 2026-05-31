@@ -7,6 +7,30 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+    <script>
+        (function () {
+            const key = 'qslideLearnerBannedUntil';
+            const untilMs = Number(localStorage.getItem(key) || 0);
+            if (!untilMs) return;
+            if (untilMs <= Date.now()) {
+                localStorage.removeItem(key);
+                return;
+            }
+            document.addEventListener('DOMContentLoaded', function () {
+                const until = new Date(untilMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                document.body.innerHTML = `
+                    <main style="min-height:100vh;display:grid;place-items:center;padding:24px;background:#0d0d10;color:#ececec;font-family:system-ui,sans-serif;">
+                        <section style="width:min(100%,520px);border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.055);border-radius:16px;padding:28px;box-shadow:0 24px 80px rgba(0,0,0,.35);">
+                            <div style="color:#4ecdc4;font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;margin-bottom:14px;">Qslide</div>
+                            <h1 style="font-size:34px;line-height:1.05;margin-bottom:14px;">Learner mode temporarily blocked</h1>
+                            <p style="color:#c8cfcc;font-size:16px;line-height:1.55;margin-bottom:18px;">Screen change detection ended your last learner quiz. You can use learner mode again at ${until}.</p>
+                            <a href="/" style="display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 18px;border-radius:10px;text-decoration:none;color:#08110f;background:#4ecdc4;font-weight:800;">Back home</a>
+                        </section>
+                    </main>
+                `;
+            });
+        })();
+    </script>
 
     <!-- Background blobs -->
     <div class="blob blob-purple"></div>

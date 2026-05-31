@@ -65,6 +65,19 @@ def parse_json_field(value, default):
         return default
 
 
+def _ensure_column(db, table, column, definition):
+    if using_postgres():
+        db.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {definition}")
+        return
+
+    existing = {
+        row[1]
+        for row in db.connection.execute(f"PRAGMA table_info({table})").fetchall()
+    }
+    if column not in existing:
+        db.connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
 def init_db():
     db_dir = os.path.dirname(DB_PATH)
     if db_dir and not using_postgres():
@@ -100,7 +113,9 @@ def init_db():
                 answers      JSONB,
                 score        NUMERIC,
                 total        NUMERIC,
-                submitted_at TEXT
+                submitted_at TEXT,
+                screen_change_count INTEGER DEFAULT 0,
+                proctoring_status TEXT DEFAULT 'clear'
             )
             """,
             "ALTER TABLE tutors ENABLE ROW LEVEL SECURITY",
@@ -135,9 +150,13 @@ def init_db():
                 answers      TEXT,
                 score        INTEGER,
                 total        INTEGER,
-                submitted_at TEXT
+                submitted_at TEXT,
+                screen_change_count INTEGER DEFAULT 0,
+                proctoring_status TEXT DEFAULT 'clear'
             );
             """
         )
+    _ensure_column(db, "submissions", "screen_change_count", "INTEGER DEFAULT 0")
+    _ensure_column(db, "submissions", "proctoring_status", "TEXT DEFAULT 'clear'")
     db.commit()
     db.close()

@@ -187,6 +187,8 @@
     <div class="result-card" id="resultCard"></div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="{{ url_for('static', filename='proctoring.js') }}"></script>
 <script>
     const TOTAL      = {{ questions | length }};
     const TIME_LIMIT = {{ time_limit }};
@@ -194,6 +196,9 @@
     const QUESTION_META = {{ questions | tojson }};
     const answers    = {};
     const answeredSet = new Set();
+    const screenProctoring = window.QslideProctoring
+        ? window.QslideProctoring.create({ mode: 'student', targetSelector: '.layout' })
+        : null;
     let   studentName= '';
     let   timerInt;
 
@@ -202,6 +207,7 @@
         if (!studentName) { alert('Please enter your name.'); return; }
         document.getElementById('nameOverlay').style.display = 'none';
         startTimer();
+        screenProctoring?.start();
     }
 
     function selectOpt(qIdx, optIdx) {
@@ -252,17 +258,24 @@
         const btn = document.getElementById('submitBtn');
         btn.textContent = 'Submitting...'; btn.disabled = true;
         clearInterval(timerInt);
+        const screenChangeCount = screenProctoring ? screenProctoring.getCount() : 0;
+        screenProctoring?.stop();
 
         try {
             const res  = await fetch(`/quiz/${QUIZ_ID}/submit`, {
                 method: 'POST', headers: {'Content-Type':'application/json'},
-                body: JSON.stringify({ student_name: studentName, answers })
+                body: JSON.stringify({
+                    student_name: studentName,
+                    answers,
+                    screen_change_count: screenChangeCount
+                })
             });
             const data = await res.json();
             showResult(data.score, data.total, data.correct, data.wrong, data.review || []);
         } catch(e) {
             alert('Submission failed. Please try again.');
             btn.textContent = 'Submit Quiz →'; btn.disabled = false;
+            screenProctoring?.start();
         }
     }
 
