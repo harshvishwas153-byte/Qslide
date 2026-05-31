@@ -2,8 +2,7 @@ import os
 import json
 import uuid
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import quote, urlparse, parse_qs
 from urllib.request import Request, urlopen
 
 from werkzeug.utils import secure_filename
@@ -11,9 +10,9 @@ from werkzeug.utils import secure_filename
 
 def _normalize_supabase_url(value):
     url = str(value or "").strip().rstrip("/")
-    for suffix in ("/storage/v1", "/storage/v1/"):
-        if url.endswith(suffix.rstrip("/")):
-            url = url[: -len(suffix.rstrip("/"))].rstrip("/")
+    parsed = urlparse(url)
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
     return url
 
 
