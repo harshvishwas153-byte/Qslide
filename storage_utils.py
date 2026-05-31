@@ -1,5 +1,9 @@
 import os
+import json
 import uuid
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 
 from werkzeug.utils import secure_filename
 
@@ -29,24 +33,60 @@ def public_storage_config():
     }
 
 
-def _client():
+def _storage_headers(content_type="application/json"):
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+    }
+    if content_type:
+        headers["Content-Type"] = content_type
+    return headers
+
+
+def _storage_url(path):
+    return f"{SUPABASE_URL}/storage/v1{path}"
+
+
+def _read_error_body(error):
+    try:
+        body = error.read().decode("utf-8", errors="replace")
+    except Exception:
+        return ""
+    try:
+        data = json.loads(body)
+        if isinstance(data, dict):
+            return data.get("message") or data.get("error") or body
+    except json.JSONDecodeError:
+        pass
+    return body
+
+
+def _storage_request(method, path, body=None, content_type="application/json"):
     if not storage_enabled():
         raise StorageError("Supabase Storage is not configured.")
 
-    from supabase import create_client
+    payload = None
+    if body is not None:
+        payload = json.dumps(body).encode("utf-8")
 
-    return create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-
-
-def _response_data(response):
-    if isinstance(response, dict):
-        return response.get("data") or response
-
-    data = getattr(response, "data", None)
-    if data is not None:
-        return data
-
-    return response
+    request = Request(
+        _storage_url(path),
+        data=payload,
+        headers=_storage_headers(content_type),
+        method=method,
+    )
+    try:
+        with urlopen(request, timeout=60) as response:
+            raw = response.read()
+            content_type_header = response.headers.get("Content-Type", "")
+            if "application/json" in content_type_header:
+                return json.loads(raw.decode("utf-8") or "{}")
+            return raw
+    except HTTPError as e:
+        detail = _read_error_body(e)
+        raise StorageError(f"Supabase Storage returned {e.code}: {detail or e.reason}") from e
+    except URLError as e:
+        raise StorageError(f"Could not reach Supabase Storage: {e.reason}") from e
 
 
 def make_storage_path(filename):
@@ -59,13 +99,13 @@ def make_storage_path(filename):
 
 
 def create_signed_upload(path):
-    response = (
-        _client()
-        .storage
-        .from_(SUPABASE_STORAGE_BUCKET)
-        .create_signed_upload_url(path)
+    bucket = quote(SUPABASE_STORAGE_BUCKET, safe="")
+    object_path = quote(path, safe="/")
+    data = _storage_request(
+        "POST",
+        f"/object/upload/sign/{bucket}/{object_path}",
+        {"expiresIn": 7200},
     )
-    data = _response_data(response) or {}
     token = data.get("token") or data.get("Token")
     signed_url = data.get("signedURL") or data.get("signedUrl") or data.get("signed_url")
 
@@ -83,13 +123,9 @@ def download_storage_file(path):
     if not path or ".." in path or path.startswith("/"):
         raise StorageError("Invalid storage file path.")
 
-    response = (
-        _client()
-        .storage
-        .from_(SUPABASE_STORAGE_BUCKET)
-        .download(path)
-    )
-    return _response_data(response)
+    bucket = quote(SUPABASE_STORAGE_BUCKET, safe="")
+    object_path = quote(path, safe="/")
+    return _storage_request("GET", f"/object/{bucket}/{object_path}", content_type=None)
 
 
 def remove_storage_file(path):
@@ -97,6 +133,7 @@ def remove_storage_file(path):
         return
 
     try:
-        _client().storage.from_(SUPABASE_STORAGE_BUCKET).remove([path])
+        bucket = quote(SUPABASE_STORAGE_BUCKET, safe="")
+        _storage_request("DELETE", f"/object/{bucket}", {"prefixes": [path]})
     except Exception:
         pass
