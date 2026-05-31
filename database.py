@@ -15,10 +15,13 @@ def _normalize_database_url(value):
     if url.startswith("postgres://"):
         url = "postgresql://" + url[len("postgres://"):]
 
-    parsed = urlparse(url)
-    if parsed.scheme.startswith("postgres") and "sslmode" not in dict(parse_qsl(parsed.query)):
-        query = urlencode([*parse_qsl(parsed.query), ("sslmode", "require")])
-        url = urlunparse(parsed._replace(query=query))
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme.startswith("postgres") and "sslmode" not in dict(parse_qsl(parsed.query)):
+            query = urlencode([*parse_qsl(parsed.query), ("sslmode", "require")])
+            url = urlunparse(parsed._replace(query=query))
+    except ValueError:
+        return url
     return url
 
 
