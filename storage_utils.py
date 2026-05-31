@@ -8,7 +8,15 @@ from urllib.request import Request, urlopen
 from werkzeug.utils import secure_filename
 
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
+def _normalize_supabase_url(value):
+    url = str(value or "").strip().rstrip("/")
+    for suffix in ("/storage/v1", "/storage/v1/"):
+        if url.endswith(suffix.rstrip("/")):
+            url = url[: -len(suffix.rstrip("/"))].rstrip("/")
+    return url
+
+
+SUPABASE_URL = _normalize_supabase_url(os.environ.get("SUPABASE_URL", ""))
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "").strip()
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 SUPABASE_STORAGE_BUCKET = os.environ.get("SUPABASE_STORAGE_BUCKET", "uploads").strip()
