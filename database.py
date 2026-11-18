@@ -178,5 +178,8 @@ def init_db():
         )
     _ensure_column(db, "submissions", "screen_change_count", "INTEGER DEFAULT 0")
     _ensure_column(db, "submissions", "proctoring_status", "TEXT DEFAULT 'clear'")
+    _ensure_column(db, "quizzes", "secure_exam", "INTEGER DEFAULT 0")
+    _ensure_column(db, "submissions", "admission_no", "TEXT")
+    _ensure_column(db, "submissions", "section", "TEXT")
     db.commit()
     db.close()

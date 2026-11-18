@@ -152,13 +152,18 @@
                 <div class="sub-rank">{{ loop.index }}</div>
                 <div class="sub-info">
                     <div class="sub-name">{{ s.student_name }}</div>
+                    {% if s.admission_no or s.section %}
+                    <div class="sub-time" style="font-weight:600;color:#555">{{ s.admission_no }}{% if s.admission_no and s.section %} · {% endif %}{% if s.section %}Section {{ s.section }}{% endif %}</div>
+                    {% endif %}
                     <div class="sub-time">{{ s.submitted_at }}</div>
                     {% if s.wrong_items %}
                     <div class="missed-badge">{{ s.wrong_items|length }} wrong / not answered</div>
                     {% else %}
                     <div class="missed-badge ok">All answers correct</div>
                     {% endif %}
-                    {% if s.is_red_tag %}
+                    {% if s.is_auto_submitted %}
+                    <div class="screen-tag">Undone: auto-submitted after {{ s.screen_change_count }} screen changes</div>
+                    {% elif s.is_red_tag %}
                     <div class="screen-tag">Red tag: {{ s.screen_change_count }} screen changes</div>
                     {% elif s.screen_change_count %}
                     <div class="screen-note">{{ s.screen_change_count }} screen change{{ 's' if s.screen_change_count != 1 }}</div>

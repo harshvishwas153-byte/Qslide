@@ -2,6 +2,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).with_name(".env"), override=True)
 import os, re, json, uuid, hashlib, secrets
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, redirect, url_for, abort, session
 from werkzeug.exceptions import RequestEntityTooLarge
@@ -10,7 +11,7 @@ import google.generativeai as genai
 from database import get_db, init_db, json_param, parse_json_field
 from moderation import ModerationError, validate_no_abusive_content
 from ppt_utils import compress_upload_for_processing, extract_text_from_file
-from quiz_logic import QuizGenerationError, generate_quiz
+from quiz_logic import QuizGenerationError, extract_existing_questions, generate_quiz
 from storage_utils import (
     StorageError,
     create_signed_upload,
@@ -30,7 +31,10 @@ DEFAULT_MAX_UPLOAD_BYTES = 50_000_000 if storage_enabled() else (4_000_000 if IS
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(DEFAULT_MAX_UPLOAD_BYTES)))
 MAX_REQUEST_BYTES = int(os.environ.get("MAX_REQUEST_BYTES", str(MAX_UPLOAD_BYTES + 300_000)))
 MAX_TEXT_CHARS = int(os.environ.get("MAX_TEXT_CHARS", "12000"))
+EXTRACT_MAX_CHARS = int(os.environ.get("EXTRACT_MAX_CHARS", "60000"))
+MIN_BANK_QUESTIONS = 3  # a file with at least this many written MCQs is treated as a question bank
 LEARNER_SCREEN_CHANGE_BAN_MINUTES = 30
+SCREEN_CHANGE_LIMIT = 3  # secured exams are auto-submitted on this many screen changes
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -163,6 +167,32 @@ def public_error_message(error, fallback="Something went wrong. Please try again
             message = message.replace(secret, "[hidden]")
 
     return message[:240]
+
+def quiz_is_secure(quiz):
+    try:
+        return bool(quiz['secure_exam'])
+    except (KeyError, IndexError, TypeError):
+        return False
+
+ADMISSION_RE = re.compile(r'^[A-Z0-9]{5,20}$')
+SECTION_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9 \-]{0,9}$')
+
+def clean_student_details(data):
+    """Validate the details a student enters before the test. Returns (details, error)."""
+    name = re.sub(r'\s+', ' ', str(data.get('student_name') or '')).strip()
+    admission = re.sub(r'[\s\-]+', '', str(data.get('admission_no') or '')).upper()
+    section = re.sub(r'\s+', ' ', str(data.get('section') or '')).strip().upper()
+    if not name or len(name) > 100:
+        return None, 'Please enter your full name.'
+    if not ADMISSION_RE.match(admission):
+        return None, 'Please enter a valid admission number (letters and numbers only, e.g. 20SCSE1410231).'
+    if not SECTION_RE.match(section):
+        return None, 'Please enter your section (up to 10 letters or numbers, e.g. A or 12).'
+    try:
+        validate_no_abusive_content([name, section], "Your details")
+    except ModerationError as e:
+        return None, str(e)
+    return {'student_name': name, 'admission_no': admission, 'section': section}, None
 
 def hash_pin(pin):
     return hashlib.sha256(pin.encode()).hexdigest()
@@ -597,7 +627,12 @@ def tutor_create_page():
     tutor = get_tutor_from_session()
     if not tutor:
         return redirect('/tutor')
-    return render_template('tutor_create.html', tutor=tutor)
+    return render_template(
+        'tutor_create.html',
+        tutor=tutor,
+        max_upload_bytes=MAX_UPLOAD_BYTES,
+        storage_config=public_storage_config(),
+    )
 
 # Create quiz API
 @app.route('/tutor/create', methods=['POST'])
@@ -613,6 +648,7 @@ def tutor_create():
     questions    = [normalize_question(q) for q in data.get('questions', [])]
     time_limit   = int(data.get('time_limit', 10))
     validity_hrs = float(data.get('validity_hours', 24))
+    secure_exam  = 1 if data.get('secure_exam') in (True, 1, '1', 'true') else 0
 
     try:
         validate_no_abusive_content({'title': title, 'questions': questions}, "Quiz")
@@ -624,14 +660,258 @@ def tutor_create():
     created_at = datetime.now().isoformat()
 
     db = get_db()
-    db.execute('INSERT INTO quizzes (id,tutor_id,title,questions,time_limit,expires_at,created_at) VALUES (?,?,?,?,?,?,?)',
+    db.execute('INSERT INTO quizzes (id,tutor_id,title,questions,time_limit,expires_at,created_at,secure_exam) VALUES (?,?,?,?,?,?,?,?)',
                (quiz_id, tutor['id'], title, json_param(questions),
-                time_limit, expires_at, created_at))
+                time_limit, expires_at, created_at, secure_exam))
     db.commit()
     db.close()
 
     link = request.host_url + 'quiz/' + quiz_id
     return jsonify({'quiz_id': quiz_id, 'link': link})
+
+# ── AI quiz from an uploaded PDF/PPT (tutor "already created" option) ──
+def _clean_generated_questions(quiz_data):
+    """Turn raw model output into the editor's question format, dropping malformed items."""
+    cleaned = []
+    if not isinstance(quiz_data, list):
+        return cleaned
+    for item in quiz_data:
+        if not isinstance(item, dict):
+            continue
+        question = str(item.get('question', '')).strip()
+        options = item.get('options')
+        if not question or not isinstance(options, list):
+            continue
+        options = [str(o).strip() for o in options if str(o).strip()]
+        if len(options) != 4 or len(set(options)) != 4:
+            continue
+        answers = [a for a in _as_answer_list(item.get('answers', item.get('answer'))) if a in options]
+        if not answers:
+            continue
+        cleaned.append({
+            'question': question,
+            'options': options,
+            'answers': answers,
+            'answer': answers[0],
+            'marks': 1,
+            'negative_marks': 0,
+        })
+    return cleaned
+
+def extract_question_bank(text, requested):
+    """If the file already contains written MCQs, return {'total', 'questions'}; otherwise None."""
+    raw = extract_existing_questions(text, requested)
+    match = re.search(r'\{.*\}', raw or '', re.DOTALL)
+    if not match:
+        return None
+    try:
+        data = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    try:
+        total = int(data.get('total_existing') or 0)
+    except (TypeError, ValueError):
+        return None
+    questions = _clean_generated_questions(data.get('questions') or [])
+    if total < MIN_BANK_QUESTIONS or not questions:
+        return None
+    return {'total': max(total, len(questions)), 'questions': questions[:requested]}
+
+QUESTION_BATCH_SIZE = 10
+
+def _parse_raw_questions(raw):
+    match = re.search(r'\[.*\]', raw or '', re.DOTALL)
+    if not match:
+        return []
+    try:
+        return _clean_generated_questions(json.loads(match.group(0)))
+    except json.JSONDecodeError:
+        return []
+
+def _question_key(q):
+    return re.sub(r'\W+', ' ', q['question'].lower()).strip()
+
+def _merge_unique(existing, new):
+    seen = {_question_key(q) for q in existing}
+    for q in new:
+        key = _question_key(q)
+        if key not in seen:
+            seen.add(key)
+            existing.append(q)
+    return existing
+
+def generate_tutor_questions(text, total):
+    """Generate `total` questions in parallel batches, then top up anything missing.
+
+    The text is split between batches so they don't repeat each other; a batch that
+    fails or returns unusable questions is covered by the top-up rounds.
+    """
+    sizes = []
+    left = total
+    while left > 0:
+        sizes.append(min(QUESTION_BATCH_SIZE, left))
+        left -= sizes[-1]
+
+    n = len(sizes)
+    if len(text) >= 600 * n:
+        step = -(-len(text) // n)
+        chunks = [text[i * step:(i + 1) * step] for i in range(n)]
+    else:
+        chunks = [text] * n
+
+    def run(chunk, count, avoid=None):
+        return _parse_raw_questions(generate_quiz(chunk, count, avoid))
+
+    questions, first_error = [], None
+    with ThreadPoolExecutor(max_workers=min(n, 4)) as pool:
+        futures = [pool.submit(run, c, s) for c, s in zip(chunks, sizes)]
+        for future in futures:
+            try:
+                _merge_unique(questions, future.result())
+            except QuizGenerationError as e:
+                first_error = first_error or e
+
+    for _ in range(2):
+        missing = total - len(questions)
+        if missing <= 0:
+            break
+        try:
+            extra = run(text, min(50, missing + 2), [q['question'] for q in questions])
+        except QuizGenerationError as e:
+            first_error = first_error or e
+            break
+        before = len(questions)
+        _merge_unique(questions, extra)
+        if len(questions) == before:
+            break
+
+    if not questions and first_error:
+        raise first_error
+    return questions[:total]
+
+@app.route('/tutor/storage/sign-upload', methods=['POST'])
+def tutor_sign_storage_upload():
+    if not get_tutor_from_session():
+        return jsonify({'error': 'Not logged in'}), 401
+    if not storage_enabled():
+        return jsonify({'error': 'Supabase Storage is not configured.'}), 503
+
+    data = request.get_json(silent=True) or {}
+    try:
+        size = int(data.get('size', 0))
+    except (TypeError, ValueError):
+        size = 0
+    if size > MAX_UPLOAD_BYTES:
+        return jsonify({'error': 'PPT/PDF is too large. Please choose a smaller file.'}), 413
+
+    try:
+        return jsonify(create_signed_upload(make_storage_path(data.get('filename', ''))))
+    except StorageError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        app.logger.exception("Could not create Supabase signed upload URL")
+        return jsonify({'error': 'Could not prepare the upload: ' + public_error_message(e)}), 500
+
+@app.route('/tutor/generate', methods=['POST'])
+def tutor_generate():
+    tutor = get_tutor_from_session()
+    if not tutor:
+        if session.get('tutor_id') and DB_INIT_ERROR:
+            return database_problem_json()
+        return jsonify({'error': 'Please log in again to generate a quiz.'}), 401
+
+    filepath = None
+    storage_path = None
+    try:
+        if request.is_json:
+            # File was uploaded straight to Supabase Storage; we only get its path.
+            data = request.get_json(silent=True) or {}
+            if not storage_enabled():
+                return jsonify({'error': 'Supabase Storage is not configured.'}), 503
+            storage_path = data.get('path', '')
+            filename = secure_filename(data.get('filename', '') or os.path.basename(storage_path))
+            num_questions, _ = _generation_settings(data)
+            if not filename.lower().endswith(('.ppt', '.pptx', '.pdf')):
+                return jsonify({'error': 'Please upload a PPTX or PDF file.'}), 400
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], f"{uuid.uuid4().hex}_{filename}")
+            file_bytes = download_storage_file(storage_path)
+            if hasattr(file_bytes, "content"):
+                file_bytes = file_bytes.content
+            if isinstance(file_bytes, str):
+                file_bytes = file_bytes.encode()
+            with open(filepath, "wb") as output:
+                output.write(file_bytes)
+            enforce_limit = False
+        else:
+            file = request.files.get('file')
+            if not file or not file.filename:
+                return jsonify({'error': 'Please attach a PPTX or PDF file.'}), 400
+            num_questions, _ = _generation_settings(request.form)
+            if not file.filename.lower().endswith(('.ppt', '.pptx', '.pdf')):
+                return jsonify({'error': 'Please upload a PPTX or PDF file.'}), 400
+            file.stream.seek(0, os.SEEK_END)
+            if file.stream.tell() > MAX_UPLOAD_BYTES:
+                return jsonify({'error': 'PPT/PDF is too large. Please choose a smaller file.'}), 413
+            file.stream.seek(0)
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], f"{uuid.uuid4().hex}_{secure_filename(file.filename)}")
+            file.save(filepath)
+            enforce_limit = True
+
+        if enforce_limit:
+            compression = compress_upload_for_processing(filepath, COMPRESSED_UPLOAD_TARGET_BYTES)
+            if not compression.under_target:
+                return jsonify({'error': 'PPT/PDF is too large. Please upload a smaller file.'}), 413
+
+        text = re.sub(r'\s+', ' ', extract_text_from_file(filepath)).strip()
+        if not text:
+            return jsonify({'error': 'No readable text found. Please upload a text-based PPTX or PDF.'}), 400
+        text_too_long = len(text) > EXTRACT_MAX_CHARS
+        text = text[:EXTRACT_MAX_CHARS]
+        validate_no_abusive_content(text, "Uploaded file")
+
+        # 1) Is this already a set of written questions? Then import them (and report how many exist).
+        bank = extract_question_bank(text, num_questions)
+        if bank:
+            validate_no_abusive_content(bank['questions'], "Imported quiz")
+            app.logger.info("Tutor quiz import: requested=%s in_file=%s imported=%s",
+                            num_questions, bank['total'], len(bank['questions']))
+            return jsonify({
+                'mode': 'existing',
+                'questions': bank['questions'],
+                'requested': num_questions,
+                'total_existing': bank['total'],
+                'truncated': text_too_long,
+            })
+
+        # 2) Otherwise it is study material: write new questions from it.
+        truncated = len(text) > MAX_TEXT_CHARS
+        text = text[:MAX_TEXT_CHARS]
+        questions = generate_tutor_questions(text, num_questions)
+        app.logger.info("Tutor quiz generation: requested=%s got=%s", num_questions, len(questions))
+        if not questions:
+            return jsonify({'error': 'The AI returned an unexpected response. Please try again.'}), 502
+        validate_no_abusive_content(questions, "Generated quiz")
+
+        return jsonify({'mode': 'generated', 'questions': questions, 'requested': num_questions, 'truncated': truncated})
+    except QuizGenerationError as e:
+        return jsonify({'error': str(e)}), 502
+    except ModerationError as e:
+        return jsonify({'error': str(e)}), 400
+    except (StorageError, ValueError) as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception:
+        app.logger.exception("Tutor quiz generation failed")
+        return jsonify({'error': 'Something went wrong. Please try again with a smaller text-based PPTX or PDF.'}), 500
+    finally:
+        if filepath:
+            try:
+                os.remove(filepath)
+            except OSError:
+                pass
+        if storage_path:
+            remove_storage_file(storage_path)
 
 # Tutor's all quizzes
 @app.route('/tutor/dashboard')
@@ -702,16 +982,20 @@ def take_quiz(quiz_id):
         title      = quiz['title'],
         tutor_name = tutor['name'] if tutor else 'Tutor',
         questions  = questions,
-        time_limit = quiz['time_limit']
+        time_limit = quiz['time_limit'],
+        secure_exam = quiz_is_secure(quiz)
     )
 
 @app.route('/quiz/<quiz_id>/submit', methods=['POST'])
 def submit_quiz(quiz_id):
     data         = request.get_json()
-    student_name = data.get('student_name', 'Anonymous')
+    details, details_error = clean_student_details(data)
+    if details_error:
+        return jsonify({'error': details_error}), 400
+    student_name = details['student_name']
     answers      = data.get('answers', {})
-    screen_change_count = safe_int(data.get('screen_change_count'), default=0)
-    proctoring_status = 'red_tag' if screen_change_count > 2 else 'clear'
+    reported_screen_changes = safe_int(data.get('screen_change_count'), default=0)
+    reported_auto_submit = bool(data.get('auto_submitted'))
 
     if not ensure_db_initialized():
         return database_problem_json()
@@ -722,6 +1006,17 @@ def submit_quiz(quiz_id):
         db.close()
         return jsonify({'error': 'Quiz not found'}), 404
 
+    # Screen-change rules only apply to secured exams; unsecured quizzes record none.
+    if quiz_is_secure(quiz):
+        screen_change_count = reported_screen_changes
+        auto_submitted = reported_auto_submit and screen_change_count >= SCREEN_CHANGE_LIMIT
+        if auto_submitted:
+            proctoring_status = 'auto_submitted'
+        else:
+            proctoring_status = 'red_tag' if screen_change_count > 2 else 'clear'
+    else:
+        screen_change_count, auto_submitted, proctoring_status = 0, False, 'clear'
+
     questions = [normalize_question(q) for q in parse_json_field(quiz['questions'], [])]
     score, total, correct_count, wrong_count = calculate_quiz_score(questions, answers)
     review = build_answer_review(questions, answers)
@@ -729,8 +1024,8 @@ def submit_quiz(quiz_id):
     db.execute(
         (
             'INSERT INTO submissions '
-            '(quiz_id,student_name,answers,score,total,submitted_at,screen_change_count,proctoring_status) '
-            'VALUES (?,?,?,?,?,?,?,?)'
+            '(quiz_id,student_name,answers,score,total,submitted_at,screen_change_count,proctoring_status,admission_no,section) '
+            'VALUES (?,?,?,?,?,?,?,?,?,?)'
         ),
         (
             quiz_id,
@@ -741,6 +1036,8 @@ def submit_quiz(quiz_id):
             datetime.now().isoformat(),
             screen_change_count,
             proctoring_status,
+            details['admission_no'],
+            details['section'],
         )
     )
     db.commit()
@@ -754,6 +1051,7 @@ def submit_quiz(quiz_id):
         'review': review,
         'screen_change_count': screen_change_count,
         'proctoring_status': proctoring_status,
+        'auto_submitted': auto_submitted,
     })
 
 # Tutor results — protected by session
@@ -794,6 +1092,8 @@ def tutor_results(quiz_id):
         proctoring_status = s['proctoring_status'] or ('red_tag' if screen_change_count > 2 else 'clear')
         submissions.append({
             'student_name': s['student_name'],
+            'admission_no': s['admission_no'] or '',
+            'section':      s['section'] or '',
             'score':        format_marks(raw_score),
             'total':        format_marks(raw_total),
             'pct':          round((raw_score/raw_total)*100) if raw_total else 0,
@@ -803,7 +1103,8 @@ def tutor_results(quiz_id):
             'wrong_items':  [item for item in review if not item['is_correct']],
             'screen_change_count': screen_change_count,
             'proctoring_status': proctoring_status,
-            'is_red_tag': proctoring_status == 'red_tag',
+            'is_red_tag': proctoring_status in ('red_tag', 'auto_submitted'),
+            'is_auto_submitted': proctoring_status == 'auto_submitted',
         })
 
     expires_at = datetime.fromisoformat(quiz['expires_at'])

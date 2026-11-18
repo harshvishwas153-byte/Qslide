@@ -72,7 +72,35 @@
         .warning-secondary{border:1.5px solid rgba(255,255,255,.12);background:#111119;color:#8f8f9a}
         .warning-primary{border:none;background:linear-gradient(135deg,#7c5cbf,#4ecdc4);color:#fff;box-shadow:0 12px 28px rgba(78,205,196,.18)}
         .warning-primary:focus,.warning-secondary:focus{outline:2px solid rgba(78,205,196,.7);outline-offset:3px}
+        .mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+        .mode-card{display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;background:#fff;border:1.5px solid #e8e8ec;border-radius:18px;padding:30px 26px;text-align:left;cursor:pointer;font-family:inherit;color:inherit;transition:all .2s;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+        .mode-card:hover,.mode-card:focus-visible{border-color:#a78bfa;transform:translateY(-3px);box-shadow:0 12px 32px rgba(124,92,191,.16);outline:none}
+        .mode-icon{font-size:34px;margin-bottom:14px}
+        .mode-name{font-family:'Syne',sans-serif;font-size:18px;font-weight:800;color:#1a1a2e;margin-bottom:6px}
+        .mode-desc{font-size:13.5px;line-height:1.55;color:#777}
+        .mode-badge{display:inline-block;margin-top:14px;font-size:11px;font-weight:700;color:#7c5cbf;background:rgba(167,139,250,.12);padding:3px 10px;border-radius:999px}
+        .change-mode{background:none;border:none;color:#888;font-family:inherit;font-size:13px;cursor:pointer;margin-bottom:18px;padding:0}
+        .change-mode:hover{color:#1a1a2e}
+        .drop{display:block;border:2px dashed #d0c4f0;background:rgba(167,139,250,.04);border-radius:14px;padding:30px 20px;text-align:center;cursor:pointer;transition:all .2s;color:#7c5cbf;font-weight:500;font-size:14px}
+        .drop:hover,.drop.drag{background:rgba(167,139,250,.1);border-color:#a78bfa}
+        .drop small{display:block;color:#999;font-weight:400;margin-top:6px;font-size:12px}
+        .drop.has-file{border-style:solid;color:#1a1a2e}
+        .exam-mode{display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap;margin:6px 0 4px}
+        .exam-label{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;color:#b5b5c0;cursor:pointer;transition:color .2s;user-select:none}
+        .exam-label.active.safe{color:#16a34a}
+        .exam-label.active.secure{color:#dc2626}
+        .exam-switch{position:relative;width:76px;height:38px;border-radius:999px;border:none;padding:0;cursor:pointer;background:#22c55e;box-shadow:inset 0 2px 6px rgba(0,0,0,.15),0 0 0 4px rgba(34,197,94,.15);transition:background .25s,box-shadow .25s;flex-shrink:0}
+        .exam-switch::after{content:'';position:absolute;top:4px;left:4px;width:30px;height:30px;border-radius:50%;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.3);transition:transform .25s cubic-bezier(.4,0,.2,1)}
+        .exam-switch[aria-checked="true"]{background:#ef4444;box-shadow:inset 0 2px 6px rgba(0,0,0,.15),0 0 0 4px rgba(239,68,68,.15)}
+        .exam-switch[aria-checked="true"]::after{transform:translateX(38px)}
+        .exam-switch:focus-visible{outline:3px solid rgba(124,92,191,.5);outline-offset:3px}
+        .exam-hint{text-align:center;font-size:13px;color:#888;margin-top:12px;line-height:1.5}
+        .ai-note.warn{background:#fffbeb;border-color:#fcd34d;color:#92400e}
+        .ai-note{background:#f0fdf9;border:1px solid #b6efe6;color:#0f766e;border-radius:12px;padding:12px 16px;font-size:13.5px;line-height:1.5;margin-bottom:20px}
+        .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.5);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;margin-right:8px}
+        @keyframes spin{to{transform:rotate(360deg)}}
         @media (max-width:760px){
+            .mode-grid{grid-template-columns:1fr}
             .header{padding:12px 16px;gap:10px;align-items:flex-start}
             .header-right{gap:8px;flex-wrap:wrap;justify-content:flex-end}
             .container{padding:24px 14px}
@@ -111,7 +139,46 @@
 
 <div class="container">
     <div class="page-title">📝 Create a Quiz</div>
-    <p class="page-sub">Write your questions, set the time limit, and share the link with your students.</p>
+    <p class="page-sub" id="pageSub">Choose how you want to create your quiz.</p>
+
+    <div id="modeSection">
+        <div class="mode-grid">
+            <button class="mode-card" type="button" onclick="chooseMode('manual')">
+                <div class="mode-icon">✍️</div>
+                <div class="mode-name">Create by yourself</div>
+                <div class="mode-desc">Write your own questions and options, and set marks for each one.</div>
+            </button>
+            <button class="mode-card" type="button" onclick="chooseMode('upload')">
+                <div class="mode-icon">📄</div>
+                <div class="mode-name">Already created</div>
+                <div class="mode-desc">Upload your PDF or PPT and AI will read it and write the MCQs for you. You can edit them before publishing.</div>
+                <span class="mode-badge">✨ AI powered</span>
+            </button>
+        </div>
+    </div>
+
+    <div id="uploadSection" style="display:none">
+        <button class="change-mode" type="button" onclick="showModes()">← Change method</button>
+        <div class="card">
+            <div class="card-title">📄 Upload your PDF or PPT</div>
+            <label class="drop" id="drop" for="aiFile">
+                <span id="dropText">Click to choose a file, or drag it here</span>
+                <small>PDF, PPT or PPTX · up to {{ (max_upload_bytes / 1000000) | round(0) | int }} MB · text-based files work best</small>
+            </label>
+            <input type="file" id="aiFile" accept=".pdf,.ppt,.pptx" hidden />
+            <div class="form-row" style="margin-top:18px;">
+                <div class="form-group">
+                    <label>Number of questions</label>
+                    <input type="number" id="aiCount" value="10" min="1" max="50" />
+                </div>
+            </div>
+            <button class="publish-btn" id="genBtn" type="button" onclick="generateFromFile()">✨ Generate Questions</button>
+        </div>
+    </div>
+
+    <div id="editorSection" style="display:none">
+    <button class="change-mode" type="button" id="editorBack" onclick="showModes()">← Change method</button>
+    <div class="ai-note" id="aiNote" style="display:none"></div>
 
     <div class="card">
         <div class="card-title">⚙️ Quiz Settings</div>
@@ -146,7 +213,18 @@
         <button class="add-q-btn" onclick="addQuestion()">＋ Add Question</button>
     </div>
 
-    <button class="publish-btn" onclick="publishQuiz()">🚀 Publish Quiz & Get Link</button>
+    <div class="card">
+        <div class="card-title">🛡️ Exam Mode</div>
+        <div class="exam-mode">
+            <span class="exam-label safe active" id="lblUnsecured" onclick="setSecure(false)">Unsecured exam</span>
+            <button type="button" class="exam-switch" id="examSwitch" role="switch" aria-checked="false" aria-label="Secured exam" onclick="setSecure(!secureExam)"></button>
+            <span class="exam-label secure" id="lblSecured" onclick="setSecure(true)">Secured exam</span>
+        </div>
+        <div class="exam-hint" id="examHint">Unsecured: students take the quiz normally.</div>
+    </div>
+
+    <button class="publish-btn" id="publishBtn" onclick="publishQuiz()">🚀 Publish Quiz & Get Link</button>
+    </div>
 </div>
 
 <div class="modal-overlay" id="successModal">
@@ -173,7 +251,27 @@
     </div>
 </div>
 
+{% if storage_config.enabled %}
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+{% endif %}
 <script>
+    const maxUploadBytes = {{ max_upload_bytes }};
+    const storageConfig = {{ storage_config | tojson }};
+    const storageClient = storageConfig.enabled && window.supabase
+        ? window.supabase.createClient(storageConfig.url, storageConfig.anon_key)
+        : null;
+    let createMode = null;
+    let secureExam = false;
+
+    function setSecure(on) {
+        secureExam = !!on;
+        document.getElementById('examSwitch').setAttribute('aria-checked', String(secureExam));
+        document.getElementById('lblUnsecured').classList.toggle('active', !secureExam);
+        document.getElementById('lblSecured').classList.toggle('active', secureExam);
+        document.getElementById('examHint').textContent = secureExam
+            ? 'Secured: extra exam protection will apply to this quiz.'
+            : 'Unsecured: students take the quiz normally.';
+    }
     let qCount = 0, publishedLink = '', publishedQuizId = '';
 
     function showWarning(message, title = 'Please check this quiz') {
@@ -195,7 +293,7 @@
         if (event.key === 'Escape') hideWarning();
     });
 
-    function addQuestion() {
+    function addQuestion(prefill) {
         qCount++;
         const idx = qCount;
         document.getElementById('qList').insertAdjacentHTML('beforeend', `
@@ -225,6 +323,168 @@
                 </div>`).join('')}
             </div>
         </div>`);
+        if (prefill) {
+            document.getElementById('q-text-' + idx).value = prefill.question || '';
+            document.getElementById('q-marks-' + idx).value = prefill.marks ?? 1;
+            document.getElementById('q-negative-' + idx).value = prefill.negative_marks ?? 0;
+            (prefill.options || []).forEach((opt, i) => {
+                const el = document.getElementById(`q-opt-${idx}-${i}`);
+                if (el) el.value = opt;
+                const cor = document.getElementById(`q-cor-${idx}-${i}`);
+                if (cor) cor.checked = (prefill.answers || []).includes(opt);
+            });
+        }
+    }
+
+    function hasFilledQuestions() {
+        return [...document.querySelectorAll('.q-item')].some(item => {
+            const id = item.id.replace('qi-', '');
+            return document.getElementById('q-text-' + id)?.value.trim();
+        });
+    }
+
+    function showModes() {
+        document.getElementById('modeSection').style.display = '';
+        document.getElementById('uploadSection').style.display = 'none';
+        document.getElementById('editorSection').style.display = 'none';
+        document.getElementById('pageSub').textContent = 'Choose how you want to create your quiz.';
+    }
+
+    function chooseMode(mode) {
+        createMode = mode;
+        document.getElementById('modeSection').style.display = 'none';
+        if (mode === 'manual') {
+            document.getElementById('aiNote').style.display = 'none';
+            document.getElementById('uploadSection').style.display = 'none';
+            document.getElementById('editorSection').style.display = '';
+            document.getElementById('pageSub').textContent = 'Write your questions, set the time limit, and share the link with your students.';
+            if (!document.querySelector('.q-item')) addQuestion();
+        } else {
+            document.getElementById('uploadSection').style.display = '';
+            document.getElementById('editorSection').style.display = 'none';
+            document.getElementById('pageSub').textContent = 'Upload your slides or notes and let AI draft the questions.';
+        }
+    }
+
+    // ── AI generation from PDF/PPT ──
+    const aiFile = document.getElementById('aiFile');
+    const drop = document.getElementById('drop');
+
+    function setPickedFile(file) {
+        if (!file) return;
+        if (!/\.(pdf|pptx?)$/i.test(file.name)) {
+            showWarning('Please choose a PDF, PPT or PPTX file.', 'Unsupported file');
+            aiFile.value = '';
+            return;
+        }
+        if (file.size > maxUploadBytes) {
+            showWarning('This file is too large. Please choose a smaller PDF or PPT.', 'File too large');
+            aiFile.value = '';
+            return;
+        }
+        document.getElementById('dropText').textContent = '📎 ' + file.name;
+        drop.classList.add('has-file');
+    }
+    aiFile.addEventListener('change', () => setPickedFile(aiFile.files[0]));
+    ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('drag'); }));
+    ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); }));
+    drop.addEventListener('drop', e => {
+        if (e.dataTransfer.files[0]) {
+            const dt = new DataTransfer();
+            dt.items.add(e.dataTransfer.files[0]);
+            aiFile.files = dt.files;
+            setPickedFile(aiFile.files[0]);
+        }
+    });
+
+    async function generateFromFile() {
+        const file = aiFile.files[0];
+        if (!file) { showWarning('Please choose a PDF or PPT file first.', 'No file selected'); return; }
+        const count = Math.max(1, Math.min(50, parseInt(document.getElementById('aiCount').value) || 10));
+        if (hasFilledQuestions() && !confirm('This will replace the questions you have already written. Continue?')) return;
+        const btn = document.getElementById('genBtn');
+        const idle = '✨ Generate Questions';
+        btn.disabled = true;
+        const busy = (msg) => { btn.innerHTML = '<span class="spinner"></span>' + msg; };
+
+        try {
+            let res;
+            if (storageConfig.enabled) {
+                if (!storageClient) throw new Error('Upload service did not load. Please refresh and try again.');
+                busy('Uploading…');
+                const signRes = await fetch('/tutor/storage/sign-upload', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ filename: file.name, size: file.size })
+                });
+                const sign = await signRes.json();
+                if (!signRes.ok || sign.error) throw new Error(sign.error || 'Could not prepare the upload.');
+                const up = await storageClient.storage.from(storageConfig.bucket)
+                    .uploadToSignedUrl(sign.path, sign.token, file, { contentType: file.type || 'application/octet-stream' });
+                if (up.error) throw new Error(up.error.message || 'Could not upload the file.');
+                busy('AI is reading your file…');
+                res = await fetch('/tutor/generate', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ path: sign.path, filename: file.name, num_questions: count })
+                });
+            } else {
+                busy('AI is reading your file…');
+                const fd = new FormData();
+                fd.append('file', file);
+                fd.append('num_questions', count);
+                res = await fetch('/tutor/generate', { method: 'POST', body: fd });
+            }
+            let data;
+            try { data = await res.json(); }
+            catch (_) { throw new Error(res.status === 413 ? 'This file is too large. Please choose a smaller PDF or PPT.' : 'The server could not process this file. Please try again.'); }
+            if (!res.ok || data.error) throw new Error(data.error || 'Could not generate questions.');
+
+            loadGeneratedQuestions(data, file);
+        } catch (err) {
+            showWarning(err.message || 'Something went wrong. Please try again.', 'Could not generate quiz');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = idle;
+        }
+    }
+
+    function loadGeneratedQuestions(data, file) {
+        document.getElementById('qList').innerHTML = '';
+        qCount = 0;
+        data.questions.forEach(q => addQuestion(q));
+        const titleEl = document.getElementById('quizTitle');
+        if (!titleEl.value.trim()) titleEl.value = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim();
+
+        const fname = file.name.replace(/[<>&"]/g, '');
+        const n = data.questions.length;
+        const plural = (k) => `${k} question${k === 1 ? '' : 's'}`;
+        let note, warn = false;
+        if (data.mode === 'existing') {
+            if (data.total_existing < data.requested) {
+                warn = true;
+                note = `📄 <b>${fname}</b> contains only <b>${plural(data.total_existing)}</b>, but you asked for ${data.requested}. `
+                     + `All ${n === data.total_existing ? n : n + ' usable'} of them have been imported below.`;
+            } else {
+                note = `📄 Imported the first <b>${plural(n)}</b> already written in <b>${fname}</b> (the file contains ${data.total_existing}). `;
+            }
+            if (n < Math.min(data.requested, data.total_existing)) {
+                note += ` ${Math.min(data.requested, data.total_existing) - n} could not be imported because they did not have exactly 4 options.`;
+            }
+            note += ' Review and edit anything before publishing.';
+            if (data.truncated) note += ' Only the first part of a very long file was read.';
+        } else {
+            note = `✨ AI created ${plural(n)} from <b>${fname}</b>. Review and edit anything before publishing.`;
+            if (n < data.requested) note += ` (You asked for ${data.requested}, but the AI could only make ${n} usable ones.)`;
+            if (data.truncated) note += ' Only the first part of a long file was used.';
+        }
+        const noteEl = document.getElementById('aiNote');
+        noteEl.innerHTML = note;
+        noteEl.classList.toggle('warn', warn);
+        noteEl.style.display = '';
+
+        document.getElementById('uploadSection').style.display = 'none';
+        document.getElementById('editorSection').style.display = '';
+        document.getElementById('pageSub').textContent = 'Check the AI-generated questions, then publish.';
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     async function publishQuiz() {
@@ -256,10 +516,10 @@
 
         if (questions.length === 0) { showWarning('Please add at least one question.'); return; }
 
-        const btn = document.querySelector('.publish-btn');
+        const btn = document.getElementById('publishBtn');
         btn.textContent = 'Publishing...'; btn.disabled = true;
 
-        const res  = await fetch('/tutor/create', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ title, questions, time_limit: timeLimit, validity_hours: validity }) });
+        const res  = await fetch('/tutor/create', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ title, questions, time_limit: timeLimit, validity_hours: validity, secure_exam: secureExam }) });
         const data = await res.json();
 
         if (data.error) { showWarning(data.error, 'Content blocked'); btn.textContent='🚀 Publish Quiz & Get Link'; btn.disabled=false; return; }
@@ -280,7 +540,6 @@
         });
     }
 
-    addQuestion();
 </script>
 </body>
 </html>

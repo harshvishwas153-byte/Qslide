@@ -226,8 +226,14 @@
             scale: 0.14,
             diffRatioThreshold: 0.12,
             pixelThreshold: 110,
-            ignoreSelectors: []
+            ignoreSelectors: [],
+            cooldownMs: null,     // min time between two detections (default: intervalMs)
+            focusDelayMs: null,   // how long the window may lose focus before it counts (default: intervalMs)
+            maxDetections: 0      // when > 0, reaching this count reports limitReached
         }, config || {});
+        if (this.config.cooldownMs == null) this.config.cooldownMs = this.config.intervalMs;
+        if (this.config.focusDelayMs == null) this.config.focusDelayMs = this.config.intervalMs;
+        this.awayCounted = false;
         this.count = 0;
         this.running = false;
         this.previous = null;
@@ -295,22 +301,25 @@
     ProctoringSession.prototype.handleVisibilityLoss = function () {
         if (!this.running) return;
         clearTimeout(this.focusTimer);
+        if (this.awayCounted) return;
         this.focusTimer = setTimeout(() => {
-            if (this.running && (document.hidden || !document.hasFocus())) {
+            if (this.running && !this.awayCounted && (document.hidden || !document.hasFocus())) {
+                this.awayCounted = true;   // one count per time the student leaves, not per event
                 this.recordDetection('focus-change', 1);
             }
-        }, this.config.intervalMs);
+        }, this.config.focusDelayMs);
     };
 
     ProctoringSession.prototype.handleFocusReturn = function () {
         if (!this.running) return;
         clearTimeout(this.focusTimer);
+        this.awayCounted = false;
         setTimeout(() => this.refreshBaseline(), 300);
     };
 
     ProctoringSession.prototype.recordDetection = function (reason, ratio) {
         const now = Date.now();
-        if (now - this.lastDetectionAt < this.config.intervalMs) return;
+        if (now - this.lastDetectionAt < this.config.cooldownMs) return;
         this.lastDetectionAt = now;
         this.count++;
 
@@ -324,12 +333,17 @@
             return;
         }
 
-        const message = highRisk
-            ? `Screen change detection: red tag active (${this.count} detections).`
-            : `Screen change detected (${this.count}/3).`;
-        showAlert(message, highRisk);
+        const limit = this.config.maxDetections;
+        const limitReached = limit > 0 && this.count >= limit;
+        const message = limitReached
+            ? `Screen changed ${this.count} times. Your test is being submitted.`
+            : highRisk
+                ? `Screen change detection: red tag active (${this.count} detections).`
+                : `Screen change detected (${this.count}/${limit > 0 ? limit : 3}).`;
+        showAlert(message, highRisk || limitReached);
+        if (limitReached) this.stop();
         if (typeof this.config.onDetection === 'function') {
-            this.config.onDetection({ count: this.count, highRisk, reason, ratio });
+            this.config.onDetection({ count: this.count, highRisk, limitReached, reason, ratio });
         }
     };
 
@@ -341,3 +355,4 @@
         showLearnerBlock
     };
 })();
+ 

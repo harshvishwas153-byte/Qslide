@@ -28,6 +28,13 @@
         .name-sub { font-size:14px; color:#888; margin-bottom:24px; }
         .name-input { width:100%; padding:13px 16px; border:1.5px solid #e0e0e8; border-radius:12px; font-family:'DM Sans',sans-serif; font-size:15px; color:#1a1a2e; outline:none; margin-bottom:16px; }
         .name-input:focus { border-color:#4ecdc4; }
+        .name-field { text-align:left; margin-bottom:14px; }
+        .name-field label { display:block; font-size:12.5px; font-weight:600; color:#555; margin-bottom:6px; }
+        .name-field .name-input { margin-bottom:0; }
+        .name-row { display:grid; grid-template-columns:1.6fr 1fr; gap:12px; }
+        .name-error { display:none; background:#fef2f2; border:1px solid #fecaca; color:#b91c1c; border-radius:10px; padding:10px 12px; font-size:13px; line-height:1.4; text-align:left; margin:2px 0 14px; }
+        .name-error.show { display:block; }
+        .name-input.invalid { border-color:#ef4444; }
         .name-btn { width:100%; padding:14px; border-radius:12px; border:none; background:linear-gradient(135deg,#7c5cbf,#4ecdc4); color:#fff; font-family:'Syne',sans-serif; font-size:15px; font-weight:700; cursor:pointer; }
 
         /* Layout */
@@ -123,7 +130,21 @@
         <div class="name-icon">👋</div>
         <div class="name-title">Welcome!</div>
         <div class="name-sub">Quiz by <strong>{{ tutor_name }}</strong> — {{ title }}</div>
-        <input class="name-input" type="text" id="studentName" placeholder="Enter your full name..." />
+        <div class="name-field">
+            <label for="studentName">Full name</label>
+            <input class="name-input" type="text" id="studentName" placeholder="Enter your full name" maxlength="100" autocomplete="name" />
+        </div>
+        <div class="name-row">
+            <div class="name-field">
+                <label for="admissionNo">Admission number</label>
+                <input class="name-input" type="text" id="admissionNo" placeholder="e.g. 20SCSE1410231" maxlength="20" autocapitalize="characters" autocomplete="off" style="text-transform:uppercase" />
+            </div>
+            <div class="name-field">
+                <label for="studentSection">Section</label>
+                <input class="name-input" type="text" id="studentSection" placeholder="e.g. A" maxlength="10" autocapitalize="characters" autocomplete="off" style="text-transform:uppercase" />
+            </div>
+        </div>
+        <div class="name-error" id="nameError" role="alert"></div>
         <button class="name-btn" onclick="startQuiz()">Start Quiz →</button>
     </div>
 </div>
@@ -196,15 +217,63 @@
     const QUESTION_META = {{ questions | tojson }};
     const answers    = {};
     const answeredSet = new Set();
-    const screenProctoring = window.QslideProctoring
-        ? window.QslideProctoring.create({ mode: 'student', targetSelector: '.layout' })
+    const SECURE_EXAM = {{ 'true' if secure_exam else 'false' }};
+    const MAX_SCREEN_CHANGES = 3;
+    // Screen detection only runs for secured exams; unsecured quizzes have none.
+    const screenProctoring = (SECURE_EXAM && window.QslideProctoring)
+        ? window.QslideProctoring.create({
+            mode: 'student',
+            targetSelector: '.layout',
+            intervalMs: 1500,      // screenshot check (was 5000)
+            cooldownMs: 1000,
+            focusDelayMs: 250,     // tab switch / alt-tab counts after 0.25s (was 5s)
+            maxDetections: MAX_SCREEN_CHANGES,
+            onDetection: info => { if (info.limitReached) submitQuiz({ auto: true }); }
+        })
         : null;
+    let submitting = false;
     let   studentName= '';
+    let   admissionNo = '';
+    let   studentSection = '';
     let   timerInt;
 
+    ['studentName', 'admissionNo', 'studentSection'].forEach((id, i, ids) => {
+        document.getElementById(id).addEventListener('keydown', e => {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            if (i < ids.length - 1) document.getElementById(ids[i + 1]).focus(); else startQuiz();
+        });
+    });
+
+    ['studentName', 'admissionNo', 'studentSection'].forEach(id => {
+        document.getElementById(id).addEventListener('input', e => {
+            e.target.classList.remove('invalid');
+            document.getElementById('nameError').classList.remove('show');
+        });
+    });
+
     function startQuiz() {
-        studentName = document.getElementById('studentName').value.trim();
-        if (!studentName) { alert('Please enter your name.'); return; }
+        const nameEl = document.getElementById('studentName');
+        const admEl  = document.getElementById('admissionNo');
+        const secEl  = document.getElementById('studentSection');
+        const name = nameEl.value.replace(/\s+/g, ' ').trim();
+        const adm  = admEl.value.replace(/[\s-]+/g, '').toUpperCase();
+        const sec  = secEl.value.replace(/\s+/g, ' ').trim().toUpperCase();
+        [nameEl, admEl, secEl].forEach(el => el.classList.remove('invalid'));
+
+        let problem = null, bad = null;
+        if (!name) { problem = 'Please enter your full name.'; bad = nameEl; }
+        else if (!/^[A-Z0-9]{5,20}$/.test(adm)) { problem = 'Please enter a valid admission number (letters and numbers only, e.g. 20SCSE1410231).'; bad = admEl; }
+        else if (!/^[A-Z0-9][A-Z0-9 -]{0,9}$/.test(sec)) { problem = 'Please enter your section (up to 10 letters or numbers, e.g. A or 12).'; bad = secEl; }
+
+        const errBox = document.getElementById('nameError');
+        if (problem) {
+            errBox.textContent = problem; errBox.classList.add('show');
+            bad.classList.add('invalid'); bad.focus();
+            return;
+        }
+        errBox.classList.remove('show');
+        studentName = name; admissionNo = adm; studentSection = sec;
         document.getElementById('nameOverlay').style.display = 'none';
         startTimer();
         screenProctoring?.start();
@@ -254,7 +323,10 @@
         document.getElementById('submitBtn').disabled = answeredSet.size !== TOTAL;
     }
 
-    async function submitQuiz() {
+    async function submitQuiz(opts) {
+        if (submitting) return;
+        submitting = true;
+        const auto = Boolean(opts && opts.auto);
         const btn = document.getElementById('submitBtn');
         btn.textContent = 'Submitting...'; btn.disabled = true;
         clearInterval(timerInt);
@@ -266,14 +338,25 @@
                 method: 'POST', headers: {'Content-Type':'application/json'},
                 body: JSON.stringify({
                     student_name: studentName,
+                    admission_no: admissionNo,
+                    section: studentSection,
                     answers,
-                    screen_change_count: screenChangeCount
+                    screen_change_count: screenChangeCount,
+                    auto_submitted: auto
                 })
             });
             const data = await res.json();
-            showResult(data.score, data.total, data.correct, data.wrong, data.review || []);
+            if (!res.ok || data.error) { const err = new Error(data.error || 'Submission failed.'); err.rejected = true; throw err; }
+            if (data.auto_submitted) showAutoSubmitted(data.screen_change_count);
+            else showResult(data.score, data.total, data.correct, data.wrong, data.review || []);
         } catch(e) {
-            alert('Submission failed. Please try again.');
+            submitting = false;
+            if (auto && !e.rejected) {
+                // Keep the exam locked; retry the automatic submission.
+                setTimeout(() => submitQuiz({ auto: true }), 1500);
+                return;
+            }
+            alert(e.rejected ? e.message : 'Submission failed. Please try again.');
             btn.textContent = 'Submit Quiz →'; btn.disabled = false;
             screenProctoring?.start();
         }
@@ -308,6 +391,15 @@
                         </div>`;
                 }).join('')}
             </div>`;
+    }
+
+    function showAutoSubmitted(count) {
+        document.getElementById('resultCard').innerHTML = `
+            <div class="result-emoji">⚠️</div>
+            <div class="result-title">Test submitted automatically</div>
+            <div class="result-sub">${escapeHtml(studentName)}, your test was marked as <strong>undone</strong> because the screen changed ${escapeHtml(count || 3)} times.</div>
+            <div class="result-note">Your tutor <strong>{{ tutor_name }}</strong> has been notified.</div>`;
+        document.getElementById('resultOverlay').classList.add('show');
     }
 
     function showResult(score, total, correct, wrong, review) {
