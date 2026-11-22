@@ -49,6 +49,13 @@
         .grade-C{color:#f59e0b}.bar-C{background:#f59e0b}
         .grade-D{color:#ef4444}.bar-D{background:#ef4444}
         .sub-wrap{margin-bottom:12px}
+        .filter-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid #e8e8ec;border-radius:14px;padding:12px 16px;margin-bottom:14px}
+        .filter-bar label{font-size:13px;font-weight:600;color:#555}
+        .filter-bar select{padding:9px 34px 9px 12px;border:1.5px solid #e0e0e8;border-radius:10px;font-family:'DM Sans',sans-serif;font-size:14px;color:#1a1a2e;background:#fafafa;outline:none;cursor:pointer;min-width:150px}
+        .filter-bar select:focus{border-color:#a78bfa}
+        .filter-count{margin-left:auto;font-size:13px;color:#888}
+        .sort-chip{font-size:12px;font-weight:700;color:#7c5cbf;background:#f3f0ff;border-radius:999px;padding:4px 10px}
+        @media (max-width:560px){.filter-count{margin-left:0;width:100%}}
         .missed-badge{display:inline-flex;align-items:center;margin-top:6px;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:700;background:#fee2e2;color:#b91c1c}
         .missed-badge.ok{background:#dcfce7;color:#15803d}
         .screen-tag{display:inline-flex;align-items:center;margin-top:6px;margin-left:6px;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:800;background:#dc2626;color:#fff;border:1px solid #991b1b}
@@ -142,12 +149,22 @@
     <div class="section-title">🎓 Student Results</div>
 
     {% if submissions %}
+        <div class="filter-bar">
+            <label for="sectionFilter">Section</label>
+            <select id="sectionFilter">
+                <option value="">All sections</option>
+                {% for sec in sections %}<option value="{{ sec }}">Section {{ sec }}</option>{% endfor %}
+                {% if has_no_section %}<option value="__none__">No section</option>{% endif %}
+            </select>
+            <span class="sort-chip">Names A → Z</span>
+            <span class="filter-count" id="filterCount"></span>
+        </div>
         {% for s in submissions %}
         {% if s.pct >= 80 %}{% set grade='A' %}
         {% elif s.pct >= 60 %}{% set grade='B' %}
         {% elif s.pct >= 40 %}{% set grade='C' %}
         {% else %}{% set grade='D' %}{% endif %}
-        <div class="sub-wrap">
+        <div class="sub-wrap" data-section="{{ s.section }}">
             <div class="sub-card">
                 <div class="sub-rank">{{ loop.index }}</div>
                 <div class="sub-info">
@@ -194,6 +211,7 @@
             </details>
         </div>
         {% endfor %}
+        <div class="empty-msg" id="noMatch" style="display:none">No students from this section have taken the quiz yet.</div>
     {% else %}
         <div class="empty-msg">🕐 No students have taken this quiz yet.<br><small style="margin-top:8px;display:block;">Share the link above to get started.</small></div>
     {% endif %}
@@ -207,6 +225,40 @@
             setTimeout(()=>btn.textContent='📋 Copy Link',2000);
         });
     }
+
+    // ── Section filter (kept across the 30-second auto-refresh) ──
+    const filterSelect = document.getElementById('sectionFilter');
+    const FILTER_KEY = 'qslideResultsSection:' + location.pathname;
+
+    function applySectionFilter() {
+        const value = filterSelect.value;
+        let shown = 0;
+        const rows = document.querySelectorAll('.sub-wrap');
+        rows.forEach(row => {
+            const sec = row.dataset.section || '';
+            const match = !value || (value === '__none__' ? sec === '' : sec === value);
+            row.style.display = match ? '' : 'none';
+            if (match) {
+                shown++;
+                const rank = row.querySelector('.sub-rank');
+                if (rank) rank.textContent = shown;
+            }
+        });
+        document.getElementById('filterCount').textContent =
+            `Showing ${shown} of ${rows.length} student${rows.length === 1 ? '' : 's'}`;
+        document.getElementById('noMatch').style.display = shown ? 'none' : '';
+        try { sessionStorage.setItem(FILTER_KEY, value); } catch (_) {}
+    }
+
+    if (filterSelect) {
+        try {
+            const saved = sessionStorage.getItem(FILTER_KEY);
+            if (saved && [...filterSelect.options].some(o => o.value === saved)) filterSelect.value = saved;
+        } catch (_) {}
+        filterSelect.addEventListener('change', applySectionFilter);
+        applySectionFilter();
+    }
+
     setTimeout(()=>location.reload(), 30000);
 </script>
 </body>

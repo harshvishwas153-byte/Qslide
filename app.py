@@ -1107,6 +1107,13 @@ def tutor_results(quiz_id):
             'is_auto_submitted': proctoring_status == 'auto_submitted',
         })
 
+    # Names in ascending A-Z order (case-insensitive); admission number breaks ties.
+    submissions.sort(key=lambda s: (s['student_name'].casefold(), s['admission_no']))
+    # Sections for the filter dropdown, in natural order (2 before 10, A before B).
+    natural = lambda text: [int(p) if p.isdigit() else p.casefold() for p in re.split(r'(\d+)', text)]
+    sections = sorted({s['section'] for s in submissions if s['section']}, key=natural)
+    has_no_section = any(not s['section'] for s in submissions)
+
     expires_at = datetime.fromisoformat(quiz['expires_at'])
     is_expired = datetime.now() > expires_at
 
@@ -1115,6 +1122,8 @@ def tutor_results(quiz_id):
         tutor      = dict(tutor),
         questions  = questions,
         submissions= submissions,
+        sections   = sections,
+        has_no_section = has_no_section,
         red_tag_count = len([s for s in submissions if s['is_red_tag']]),
         is_expired = is_expired,
         quiz_link  = request.host_url + 'quiz/' + quiz_id
