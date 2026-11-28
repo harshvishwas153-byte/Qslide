@@ -138,6 +138,20 @@ def init_db():
                 proctoring_status TEXT DEFAULT 'clear'
             )
             """,
+            """
+            CREATE TABLE IF NOT EXISTS screen_captures (
+                id              BIGSERIAL PRIMARY KEY,
+                quiz_id         TEXT REFERENCES quizzes(id),
+                admission_no    TEXT,
+                student_name    TEXT,
+                reason          TEXT,
+                detection_count INTEGER DEFAULT 0,
+                image           BYTEA,
+                created_at      TEXT
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS screen_captures_quiz_idx ON screen_captures (quiz_id, admission_no)",
+            "ALTER TABLE screen_captures ENABLE ROW LEVEL SECURITY",
             "ALTER TABLE tutors ENABLE ROW LEVEL SECURITY",
             "ALTER TABLE quizzes ENABLE ROW LEVEL SECURITY",
             "ALTER TABLE submissions ENABLE ROW LEVEL SECURITY",
@@ -174,6 +188,17 @@ def init_db():
                 screen_change_count INTEGER DEFAULT 0,
                 proctoring_status TEXT DEFAULT 'clear'
             );
+            CREATE TABLE IF NOT EXISTS screen_captures (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                quiz_id         TEXT,
+                admission_no    TEXT,
+                student_name    TEXT,
+                reason          TEXT,
+                detection_count INTEGER DEFAULT 0,
+                image           BLOB,
+                created_at      TEXT
+            );
+            CREATE INDEX IF NOT EXISTS screen_captures_quiz_idx ON screen_captures (quiz_id, admission_no);
             """
         )
     _ensure_column(db, "submissions", "screen_change_count", "INTEGER DEFAULT 0")

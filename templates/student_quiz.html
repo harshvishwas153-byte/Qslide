@@ -32,6 +32,12 @@
         .name-field label { display:block; font-size:12.5px; font-weight:600; color:#555; margin-bottom:6px; }
         .name-field .name-input { margin-bottom:0; }
         .name-row { display:grid; grid-template-columns:1.6fr 1fr; gap:12px; }
+        .secure-note { text-align:left; background:#fff7ed; border:1px solid #fed7aa; color:#9a3412; border-radius:12px; padding:12px 14px; font-size:13px; line-height:1.5; margin-bottom:16px; }
+        .share-overlay { display:none; position:fixed; inset:0; background:rgba(15,15,30,.88); backdrop-filter:blur(8px); z-index:500; align-items:center; justify-content:center; padding:20px; }
+        .share-overlay.show { display:flex; }
+        .share-box { background:#fff; border-radius:20px; padding:32px 28px; max-width:420px; width:100%; text-align:center; }
+        .share-box h3 { font-family:'Syne',sans-serif; font-size:20px; color:#1a1a2e; margin-bottom:8px; }
+        .share-box p { font-size:14px; color:#666; line-height:1.55; margin-bottom:18px; }
         .name-error { display:none; background:#fef2f2; border:1px solid #fecaca; color:#b91c1c; border-radius:10px; padding:10px 12px; font-size:13px; line-height:1.4; text-align:left; margin:2px 0 14px; }
         .name-error.show { display:block; }
         .name-input.invalid { border-color:#ef4444; }
@@ -120,11 +126,31 @@
             .header-right{width:100%;justify-content:space-between}
             .quiz-meta{max-width:58vw}
         }
+        .no-select, .no-select * { -webkit-user-select:none !important; user-select:none !important; -webkit-touch-callout:none; }
+        .no-select input, .no-select textarea { -webkit-user-select:text !important; user-select:text !important; }
     </style>
 </head>
 <body>
 
 <!-- Name Modal -->
+<div class="share-overlay" id="fsOverlay">
+    <div class="share-box">
+        <h3 id="fsTitle">Enter full screen to start</h3>
+        <p id="fsText"></p>
+        <div class="name-error" id="fsError" role="alert"></div>
+        <button class="name-btn" id="fsBtn" onclick="fullscreenClick()">Enter full screen</button>
+    </div>
+</div>
+
+<div class="share-overlay" id="shareOverlay">
+    <div class="share-box">
+        <h3>Screen sharing stopped</h3>
+        <p>This is a secured exam. Share your <strong>entire screen</strong> again to continue. The timer is still running.</p>
+        <div class="name-error" id="shareError" role="alert"></div>
+        <button class="name-btn" onclick="resumeShare()">Share entire screen again</button>
+    </div>
+</div>
+
 <div class="name-overlay" id="nameOverlay">
     <div class="name-modal">
         <div class="name-icon">👋</div>
@@ -141,11 +167,13 @@
             </div>
             <div class="name-field">
                 <label for="studentSection">Section</label>
-                <input class="name-input" type="text" id="studentSection" placeholder="e.g. A" maxlength="10" autocapitalize="characters" autocomplete="off" style="text-transform:uppercase" />
-            </div>
+        <input class="name-input" type="text" id="studentSection" placeholder="e.g. 55" maxlength="3" inputmode="numeric" pattern="[0-9]*" autocomplete="off" oninput="this.value=this.value.replace(/[^0-9]/g,'')" />            </div>
         </div>
+        {% if secure_exam %}
+        <div class="secure-note">🔒 <strong>Secured exam.</strong> You must share your <strong>entire screen</strong> to start (choose "Entire screen" in the browser box). When a screen change is detected, a screenshot of your whole screen is sent to your tutor, together with the reason (for example switching tab, leaving full screen or opening an extension). The exam must be taken in <strong>full-screen mode</strong>, and after 3 screen changes your test is submitted automatically. Use a laptop or desktop computer.</div>
+        {% endif %}
         <div class="name-error" id="nameError" role="alert"></div>
-        <button class="name-btn" onclick="startQuiz()">Start Quiz →</button>
+        <button class="name-btn" id="startBtn" onclick="startQuiz()">{{ 'Start Quiz & Share Screen →' if secure_exam else 'Start Quiz →' }}</button>
     </div>
 </div>
 
@@ -219,6 +247,16 @@
     const answeredSet = new Set();
     const SECURE_EXAM = {{ 'true' if secure_exam else 'false' }};
     const MAX_SCREEN_CHANGES = 3;
+    // Shown to the student in the red alert; the tutor sees a longer explanation next to each screenshot.
+    const REASON_TEXT = {
+        'tab-hidden':      'Reason: you switched tab, minimised the browser or changed desktop.',
+        'window-blur':     'Reason: you moved to another window or app.',
+        'fullscreen-exit': 'Reason: you left full-screen mode.',
+        'devtools':        'Reason: developer tools or a side panel seems to be open.',
+        'extension':       'Reason: a browser extension changed the exam page.',
+        'page-change':     'Reason: the exam page changed on screen.',
+        'share-stopped':   'Reason: you stopped sharing your screen.'
+    };
     // Screen detection only runs for secured exams; unsecured quizzes have none.
     const screenProctoring = (SECURE_EXAM && window.QslideProctoring)
         ? window.QslideProctoring.create({
@@ -228,10 +266,260 @@
             cooldownMs: 1000,
             focusDelayMs: 250,     // tab switch / alt-tab counts after 0.25s (was 5s)
             maxDetections: MAX_SCREEN_CHANGES,
-            onDetection: info => { if (info.limitReached) submitQuiz({ auto: true }); }
+            quietAfterDetectionMs: 3000,   // one action (e.g. leaving full screen) must not count twice
+            describeReason: r => REASON_TEXT[r] || '',
+            onDetection: info => onScreenChange(info)
         })
         : null;
     let submitting = false;
+    let starting = false;
+    let quizRunning = false;
+
+    // ── Whole-screen capture (secured exams) ──
+    // Browsers only allow this through the screen-share prompt, so the student
+    // must pick "Entire screen" once; screenshots are then taken from that stream.
+    const CAPTURE_MAX_WIDTH = 1280;
+    const CAPTURE_QUALITY = 0.6;
+    let screenStream = null, screenTrack = null, shareVideo = null;
+
+    function shareError(code) { const e = new Error(code); e.shareCode = code; return e; }
+
+    function shareMessage(err) {
+        if (err && err.shareCode === 'unsupported') return 'Secured exams need a laptop or desktop browser (Chrome, Edge or Firefox). Phones and tablets cannot share the screen.';
+        if (err && err.shareCode === 'not-monitor') return 'Please choose "Entire screen" in the sharing box, not a window or a browser tab.';
+        if (err && (err.name === 'NotAllowedError' || err.name === 'AbortError')) return 'You must allow screen sharing and choose "Entire screen" to take this secured exam.';
+        return 'Could not start screen sharing. Please try again.';
+    }
+
+    async function requestScreenShare() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) throw shareError('unsupported');
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+            video: { displaySurface: 'monitor' },
+            audio: false,
+            selfBrowserSurface: 'exclude',
+            surfaceSwitching: 'exclude',
+            monitorTypeSurfaces: 'include'
+        });
+        const track = stream.getVideoTracks()[0];
+        const surface = track && track.getSettings ? track.getSettings().displaySurface : undefined;
+        if (!track || (surface && surface !== 'monitor')) {
+            stream.getTracks().forEach(t => t.stop());
+            throw shareError('not-monitor');
+        }
+        stopScreenShare();
+        screenStream = stream; screenTrack = track;
+        shareVideo = document.createElement('video');
+        shareVideo.muted = true; shareVideo.playsInline = true; shareVideo.srcObject = stream;
+        try { await shareVideo.play(); } catch (_) {}
+        track.addEventListener('ended', onShareEnded);
+    }
+
+    function stopScreenShare() {
+        if (screenTrack) screenTrack.removeEventListener('ended', onShareEnded);
+        if (screenStream) screenStream.getTracks().forEach(t => t.stop());
+        screenStream = null; screenTrack = null; shareVideo = null;
+    }
+
+    async function grabScreenshot() {
+        let source = null, w = 0, h = 0;
+        try {
+            if (window.ImageCapture && screenTrack && screenTrack.readyState === 'live') { source = await new ImageCapture(screenTrack).grabFrame(); w = source.width; h = source.height; }
+        } catch (_) { source = null; }
+        if (!source && shareVideo && shareVideo.videoWidth) { source = shareVideo; w = shareVideo.videoWidth; h = shareVideo.videoHeight; }
+        if (!source || !w || !h) return null;
+        const scale = Math.min(1, CAPTURE_MAX_WIDTH / w);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(w * scale); canvas.height = Math.round(h * scale);
+        canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height);
+        if (source.close) source.close();
+        return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', CAPTURE_QUALITY));
+    }
+
+    async function sendScreenshot(reason, count) {
+        try {
+            const blob = await grabScreenshot();
+            if (!blob && reason !== 'share-stopped') return false;
+            const fd = new FormData();
+            if (blob) fd.append('image', blob, 'screen.jpg');
+            fd.append('admission_no', admissionNo);
+            fd.append('student_name', studentName);
+            fd.append('reason', reason);
+            fd.append('count', count);
+            const res = await fetch(`/quiz/${QUIZ_ID}/capture`, { method: 'POST', body: fd });
+            return res.ok;
+        } catch (_) { return false; }
+    }
+
+    async function onScreenChange(info) {
+        if (info.limitReached) {
+            // Send the final screenshot first (but never wait more than 4s), then submit.
+            await Promise.race([sendScreenshot(info.reason, info.count), new Promise(r => setTimeout(r, 4000))]);
+            submitQuiz({ auto: true });
+            return;
+        }
+        const reason = info.reason;
+        sendScreenshot(reason, info.count);
+        // A second shot a moment later catches the final split-window layout.
+        if (reason !== 'share-stopped') setTimeout(() => { if (quizRunning && !submitting) sendScreenshot(reason, info.count); }, 1500);
+    }
+
+    function onShareEnded() {
+        if (!quizRunning || submitting) return;
+        // Counts as a screen change; the tutor is told through onScreenChange (last frame if we still hold one, else a note).
+        screenProctoring?.recordDetection('share-stopped', 1);
+        if (!submitting && screenProctoring && screenProctoring.getCount() < MAX_SCREEN_CHANGES) {
+            document.getElementById('shareOverlay').classList.add('show');
+        }
+    }
+
+    // ── Full-screen mode (secured exams) ──
+    let pendingStart = false;
+    const fullscreenSupported = () => Boolean(document.documentElement.requestFullscreen);
+
+    function showFsOverlay(mode) {
+        const n = screenProctoring ? screenProctoring.getCount() : 0;
+        document.getElementById('fsTitle').textContent = mode === 'start' ? 'Enter full screen to start' : 'You left full screen';
+        document.getElementById('fsText').innerHTML = mode === 'start'
+            ? 'This secured exam must be taken in <strong>full-screen mode</strong>. Leaving full screen (including pressing Esc), switching windows or tabs counts as a screen change. After ' + MAX_SCREEN_CHANGES + ' the test is submitted automatically.'
+            : 'Return to full screen to continue. Leaving full screen counts as a screen change (<strong>' + n + '/' + MAX_SCREEN_CHANGES + '</strong>). The timer is still running.';
+        document.getElementById('fsBtn').textContent = mode === 'start' ? 'Enter full screen & start' : 'Return to full screen';
+        document.getElementById('fsError').classList.remove('show');
+        document.getElementById('fsOverlay').classList.add('show');
+    }
+
+    async function fullscreenClick() {
+        const err = document.getElementById('fsError');
+        err.classList.remove('show');
+        try {
+            await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+        } catch (_) {
+            err.textContent = 'Your browser blocked full screen. Please click the button again.'; err.classList.add('show');
+            return;
+        }
+        document.getElementById('fsOverlay').classList.remove('show');
+        screenProctoring?.quiet(3000);
+        if (pendingStart) { pendingStart = false; beginExam(); }
+    }
+
+    document.addEventListener('fullscreenchange', () => {
+        if (!SECURE_EXAM || !quizRunning || submitting) return;
+        screenProctoring?.quiet(3000);                       // layout changes are not a second violation
+        if (!document.fullscreenElement) {
+            screenProctoring?.recordDetection('fullscreen-exit', 1);
+            if (!submitting && screenProctoring && screenProctoring.getCount() < MAX_SCREEN_CHANGES) showFsOverlay('exit');
+        }
+    });
+
+    function exitFullscreenSafe() {
+        if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+    }
+
+    // ── Extra detectors: developer tools / side panels and browser extensions ──
+    let devtoolsTimer = null, devtoolsOpen = false, extObserver = null, lastExtensionFlag = 0;
+    const EXT_SELECTOR = '[src^="chrome-extension://"],[src^="moz-extension://"],[src^="safari-web-extension://"],[href^="chrome-extension://"],[href^="moz-extension://"]';
+    const EXT_ATTR = /^(data-new-gr|data-gr-|data-grammarly|cz-shortcut|data-lt-|data-darkreader|data-translate)/i;
+
+    function flagExtension() {
+        const now = Date.now();
+        if (now - lastExtensionFlag < 20000) return;         // a persistent extension counts once, not repeatedly
+        lastExtensionFlag = now;
+        screenProctoring?.recordDetection('extension', 1);
+    }
+
+    // ── Copy protection + screenshot-key detection (secured exams) ──
+    let lastShotKeyAt = 0, protectOn = false;
+    function toast(msg) {
+        let el = document.getElementById('secToast');
+        if (!el) {
+            el = document.createElement('div'); el.id = 'secToast';
+            el.style.cssText = 'position:fixed;top:70px;right:16px;z-index:1300;max-width:340px;background:#fef2f2;color:#991b1b;border:1px solid #fecaca;border-radius:12px;padding:12px 16px;font:600 14px/1.4 sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.15)';
+            document.body.appendChild(el);
+        }
+        el.textContent = msg; el.style.display = 'block';
+        clearTimeout(el._t); el._t = setTimeout(() => { el.style.display = 'none'; }, 6000);
+    }
+    function onShotAttempt() {
+        const now = Date.now();
+        if (now - lastShotKeyAt < 3000) return;
+        lastShotKeyAt = now;
+        toast('Screenshot detected. Your tutor has been notified and received a copy of your screen.');
+        sendScreenshot('screenshot-key', screenProctoring ? screenProctoring.getCount() : 0);
+    }
+    function isShotCombo(e) {
+        const k = (e.key || '').toLowerCase();
+        if (k === 'printscreen' || e.code === 'PrintScreen') return true;
+        if (e.metaKey && e.shiftKey && (k === 's' || ['3','4','5','#','$','%'].includes(e.key))) return true;   // Win+Shift+S, Cmd+Shift+3/4/5
+        if (e.altKey && k === 'printscreen') return true;
+        return false;
+    }
+    const blockEvt = e => { if (protectOn && quizRunning) e.preventDefault(); };
+    function onProtectKey(e) {
+        if (!protectOn || !quizRunning) return;
+        if (isShotCombo(e)) { onShotAttempt(); return; }
+        if ((e.ctrlKey || e.metaKey) && ['c','x','a','s','p','u'].includes((e.key || '').toLowerCase())) e.preventDefault();
+    }
+    function startProtection() {
+        if (protectOn) return;
+        protectOn = true; document.body.classList.add('no-select');
+        ['copy','cut','contextmenu','selectstart','dragstart'].forEach(ev => document.addEventListener(ev, blockEvt));
+        window.addEventListener('keydown', onProtectKey, true);
+        window.addEventListener('keyup', onProtectKey, true);   // Windows only reports Print Screen on key release
+    }
+    function stopProtection() {
+        protectOn = false; document.body.classList.remove('no-select');
+        ['copy','cut','contextmenu','selectstart','dragstart'].forEach(ev => document.removeEventListener(ev, blockEvt));
+        window.removeEventListener('keydown', onProtectKey, true);
+        window.removeEventListener('keyup', onProtectKey, true);
+    }
+
+    function startExtraDetectors() {
+        startProtection();
+        // In full screen the window has no borders, so a big gap means dev tools or a side panel took space.
+        devtoolsTimer = setInterval(() => {
+            if (!quizRunning || submitting || !document.fullscreenElement) return;
+            const gap = Math.max(window.outerWidth - window.innerWidth, window.outerHeight - window.innerHeight);
+            if (gap > 160 && !devtoolsOpen) { devtoolsOpen = true; screenProctoring?.recordDetection('devtools', 1); }
+            else if (gap <= 160) devtoolsOpen = false;
+        }, 1000);
+
+        extObserver = new MutationObserver(records => {
+            if (!quizRunning || submitting) return;
+            for (const r of records) {
+                if (r.type === 'attributes') {
+                    const el = r.target;
+                    if (EXT_ATTR.test(r.attributeName || '') || (r.attributeName === 'class' && el === document.documentElement && /translated-/.test(el.className))) { flagExtension(); return; }
+                    continue;
+                }
+                for (const node of r.addedNodes) {
+                    if (node.nodeType !== 1) continue;
+                    const tag = (node.tagName || '').toLowerCase();
+                    if (tag.includes('-') || (node.matches && node.matches(EXT_SELECTOR)) || (node.querySelector && node.querySelector(EXT_SELECTOR))) { flagExtension(); return; }
+                }
+            }
+        });
+        extObserver.observe(document.documentElement, { childList: true, subtree: true, attributes: true,
+            attributeFilter: ['class', 'data-new-gr-c-s-check-loaded', 'data-gr-ext-installed', 'cz-shortcut-listen', 'data-lt-installed', 'data-darkreader-mode', 'data-darkreader-scheme', 'data-translate'] });
+    }
+
+    function stopExtraDetectors() {
+        stopProtection();
+        clearInterval(devtoolsTimer); devtoolsTimer = null;
+        if (extObserver) { extObserver.disconnect(); extObserver = null; }
+    }
+
+    async function resumeShare() {
+        const box = document.getElementById('shareError');
+        box.classList.remove('show');
+        screenProctoring?.pause(120000);          // the share picker takes focus; don't count that
+        try {
+            await requestScreenShare();
+            document.getElementById('shareOverlay').classList.remove('show');
+        } catch (err) {
+            box.textContent = shareMessage(err); box.classList.add('show');
+        } finally {
+            screenProctoring?.pause(0);
+        }
+    }
     let   studentName= '';
     let   admissionNo = '';
     let   studentSection = '';
@@ -252,7 +540,8 @@
         });
     });
 
-    function startQuiz() {
+    async function startQuiz() {
+        if (starting) return;
         const nameEl = document.getElementById('studentName');
         const admEl  = document.getElementById('admissionNo');
         const secEl  = document.getElementById('studentSection');
@@ -264,8 +553,7 @@
         let problem = null, bad = null;
         if (!name) { problem = 'Please enter your full name.'; bad = nameEl; }
         else if (!/^[A-Z0-9]{5,20}$/.test(adm)) { problem = 'Please enter a valid admission number (letters and numbers only, e.g. 20SCSE1410231).'; bad = admEl; }
-        else if (!/^[A-Z0-9][A-Z0-9 -]{0,9}$/.test(sec)) { problem = 'Please enter your section (up to 10 letters or numbers, e.g. A or 12).'; bad = secEl; }
-
+        else if (!/^\d{1,3}$/.test(sec) || +sec < 1 || +sec > 100) { problem = 'Please enter your section as a number from 1 to 100 (e.g. 55).'; bad = secEl; }
         const errBox = document.getElementById('nameError');
         if (problem) {
             errBox.textContent = problem; errBox.classList.add('show');
@@ -274,9 +562,59 @@
         }
         errBox.classList.remove('show');
         studentName = name; admissionNo = adm; studentSection = sec;
+
+        // One attempt per admission number: check before the exam (and its screen share) begins.
+        const goBtn = document.getElementById('startBtn');
+        const goText = goBtn.textContent;
+        goBtn.disabled = true; goBtn.textContent = 'Checking…';
+        try {
+            const r = await fetch(`/quiz/${QUIZ_ID}/check-attempt`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ admission_no: adm }) });
+            if (r.status === 409) {
+                const j = await r.json().catch(() => ({}));
+                errBox.textContent = j.error || 'This admission number has already submitted this test.'; errBox.classList.add('show');
+                admEl.classList.add('invalid'); goBtn.disabled = false; goBtn.textContent = goText;
+                return;
+            }
+        } catch (_) { /* offline: the server still blocks a second submission */ }
+        goBtn.disabled = false; goBtn.textContent = goText;
+
+        if (SECURE_EXAM) {
+            starting = true;
+            const startBtn = document.getElementById('startBtn');
+            const idleText = startBtn.textContent;
+            startBtn.disabled = true; startBtn.textContent = 'Waiting for screen sharing…';
+            try {
+                await requestScreenShare();
+            } catch (err) {
+                errBox.textContent = shareMessage(err); errBox.classList.add('show');
+                startBtn.disabled = false; startBtn.textContent = idleText; starting = false;
+                return;
+            }
+            starting = false;
+            if (!fullscreenSupported()) {
+                stopScreenShare();
+                errBox.textContent = 'Your browser cannot use full-screen mode. Please use Chrome, Edge or Firefox on a laptop or desktop.';
+                errBox.classList.add('show');
+                startBtn.disabled = false; startBtn.textContent = idleText;
+                return;
+            }
+            // Full screen needs a fresh click, so the student confirms it on the next step.
+            pendingStart = true;
+            showFsOverlay('start');
+            return;
+        }
+
+        beginExam();
+    }
+
+    function beginExam() {
         document.getElementById('nameOverlay').style.display = 'none';
+        quizRunning = true;
         startTimer();
-        screenProctoring?.start();
+        if (SECURE_EXAM) {
+            // let the browser's "sharing" bar and full-screen transition settle before the baseline is taken
+            setTimeout(() => { if (quizRunning) { screenProctoring?.start(); startExtraDetectors(); } }, 900);
+        }
     }
 
     function selectOpt(qIdx, optIdx) {
@@ -332,6 +670,7 @@
         clearInterval(timerInt);
         const screenChangeCount = screenProctoring ? screenProctoring.getCount() : 0;
         screenProctoring?.stop();
+        quizRunning = false;
 
         try {
             const res  = await fetch(`/quiz/${QUIZ_ID}/submit`, {
@@ -347,6 +686,9 @@
             });
             const data = await res.json();
             if (!res.ok || data.error) { const err = new Error(data.error || 'Submission failed.'); err.rejected = true; throw err; }
+            stopScreenShare();
+            stopExtraDetectors();
+            exitFullscreenSafe();
             if (data.auto_submitted) showAutoSubmitted(data.screen_change_count);
             else showResult(data.score, data.total, data.correct, data.wrong, data.review || []);
         } catch(e) {
@@ -358,6 +700,7 @@
             }
             alert(e.rejected ? e.message : 'Submission failed. Please try again.');
             btn.textContent = 'Submit Quiz →'; btn.disabled = false;
+            quizRunning = true;
             screenProctoring?.start();
         }
     }

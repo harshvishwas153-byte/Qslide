@@ -49,6 +49,15 @@
         .grade-C{color:#f59e0b}.bar-C{background:#f59e0b}
         .grade-D{color:#ef4444}.bar-D{background:#ef4444}
         .sub-wrap{margin-bottom:12px}
+        .shot-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;padding:14px 0 4px}
+        .shot-grid a{display:block;text-decoration:none;background:#fff;border:1px solid #e8e8ec;border-radius:12px;overflow:hidden}
+        .shot-grid img{display:block;width:100%;aspect-ratio:16/10;object-fit:cover;background:#f3f3f6}
+        .shot-grid span{display:block;padding:8px 10px 9px;font-size:12px;color:#555;line-height:1.4}
+        .shot-grid b{display:block;color:#1a1a2e;font-size:12.5px}
+        .shot-grid .noimg{display:flex;align-items:center;justify-content:center;aspect-ratio:16/10;background:#fef2f2;color:#b91c1c;font-size:12px;text-align:center;padding:10px}
+        .shot-grid small{display:block;color:#777;font-size:11.5px;margin-top:3px;line-height:1.45}
+        .shot-grid em{display:block;font-style:normal;color:#aaa;font-size:11px;margin-top:4px}
+        .shot-grid .final{color:#b91c1c;font-weight:700;font-style:normal}
         .filter-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid #e8e8ec;border-radius:14px;padding:12px 16px;margin-bottom:14px}
         .filter-bar label{font-size:13px;font-weight:600;color:#555}
         .filter-bar select{padding:9px 34px 9px 12px;border:1.5px solid #e0e0e8;border-radius:10px;font-family:'DM Sans',sans-serif;font-size:14px;color:#1a1a2e;background:#fafafa;outline:none;cursor:pointer;min-width:150px}
@@ -209,10 +218,36 @@
                     {% endfor %}
                 </div>
             </details>
+            {% if s.captures %}
+            <details class="review-panel">
+                <summary>📸 Whole-screen screenshots ({{ s.captures|length }})</summary>
+                <div class="shot-grid">
+                    {% for c in s.captures %}
+                    <a href="/tutor/capture/{{ c.id }}" target="_blank" rel="noopener">{% if c.has_image %}<img loading="lazy" src="/tutor/capture/{{ c.id }}" alt="Screenshot {{ loop.index }}">{% else %}<div class="noimg">No image: sharing had already ended</div>{% endif %}<span><b>{{ c.label }}{% if c.final %} <i class="final">· 3rd change, test auto-submitted</i>{% endif %}</b><small>{{ c.why }}</small><em>{{ c.time }}</em></span></a>
+                    {% endfor %}
+                </div>
+            </details>
+            {% endif %}
         </div>
         {% endfor %}
         <div class="empty-msg" id="noMatch" style="display:none">No students from this section have taken the quiz yet.</div>
-    {% else %}
+    {% endif %}
+
+    {% if unsubmitted_captures %}
+        <div class="section-title" style="margin-top:28px">⚠️ Screenshots from students who have not submitted</div>
+        {% for u in unsubmitted_captures %}
+        <details class="review-panel" style="margin-bottom:10px">
+            <summary>{{ u.student_name }} · {{ u.admission_no }} ({{ u.captures|length }} screenshot{{ '' if u.captures|length == 1 else 's' }})</summary>
+            <div class="shot-grid">
+                {% for c in u.captures %}
+                <a href="/tutor/capture/{{ c.id }}" target="_blank" rel="noopener">{% if c.has_image %}<img loading="lazy" src="/tutor/capture/{{ c.id }}" alt="Screenshot {{ loop.index }}">{% else %}<div class="noimg">No image: sharing had already ended</div>{% endif %}<span><b>{{ c.label }}{% if c.final %} <i class="final">· 3rd change, test auto-submitted</i>{% endif %}</b><small>{{ c.why }}</small><em>{{ c.time }}</em></span></a>
+                {% endfor %}
+            </div>
+        </details>
+        {% endfor %}
+    {% endif %}
+
+    {% if not submissions %}
         <div class="empty-msg">🕐 No students have taken this quiz yet.<br><small style="margin-top:8px;display:block;">Share the link above to get started.</small></div>
     {% endif %}
 </div>
@@ -259,7 +294,8 @@
         applySectionFilter();
     }
 
-    setTimeout(()=>location.reload(), 30000);
+    // Auto-refresh, but never while the tutor has a panel open (it would collapse it).
+    setTimeout(()=>{ if (!document.querySelector('details[open]')) location.reload(); }, 30000);
 </script>
 </body>
 </html>

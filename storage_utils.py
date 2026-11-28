@@ -42,10 +42,11 @@ def public_storage_config():
 
 
 def _storage_headers(content_type="application/json"):
-    headers = {
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-    }
+    headers = {"apikey": SUPABASE_SERVICE_ROLE_KEY}
+    # Legacy service_role keys are JWTs and are also sent as a Bearer token.
+    # New-style secret keys (sb_secret_...) are not JWTs and go in the apikey header only.
+    if not SUPABASE_SERVICE_ROLE_KEY.startswith("sb_"):
+        headers["Authorization"] = f"Bearer {SUPABASE_SERVICE_ROLE_KEY}"
     if content_type:
         headers["Content-Type"] = content_type
     return headers

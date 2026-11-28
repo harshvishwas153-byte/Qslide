@@ -229,11 +229,15 @@
             ignoreSelectors: [],
             cooldownMs: null,     // min time between two detections (default: intervalMs)
             focusDelayMs: null,   // how long the window may lose focus before it counts (default: intervalMs)
-            maxDetections: 0      // when > 0, reaching this count reports limitReached
+            maxDetections: 0,     // when > 0, reaching this count reports limitReached
+            quietAfterDetectionMs: 0, // ignore 'page-change' this long after any other detection
+            describeReason: null  // optional (reason) => text appended to the on-screen alert
         }, config || {});
         if (this.config.cooldownMs == null) this.config.cooldownMs = this.config.intervalMs;
         if (this.config.focusDelayMs == null) this.config.focusDelayMs = this.config.intervalMs;
         this.awayCounted = false;
+        this.quietUntil = 0;
+        this.pausedUntil = 0;
         this.count = 0;
         this.running = false;
         this.previous = null;
@@ -289,7 +293,7 @@
             const ratio = diffRatio(this.previous, current, this.config.pixelThreshold);
             this.previous = current || this.previous;
             if (ratio > this.config.diffRatioThreshold) {
-                this.recordDetection('screenshot', ratio);
+                this.recordDetection('page-change', ratio);
             }
         } catch (_) {
             this.previous = null;
@@ -305,7 +309,8 @@
         this.focusTimer = setTimeout(() => {
             if (this.running && !this.awayCounted && (document.hidden || !document.hasFocus())) {
                 this.awayCounted = true;   // one count per time the student leaves, not per event
-                this.recordDetection('focus-change', 1);
+                // tab hidden = switched tab / minimised / other desktop; otherwise another window took focus
+                this.recordDetection(document.hidden ? 'tab-hidden' : 'window-blur', 1);
             }
         }, this.config.focusDelayMs);
     };
@@ -317,8 +322,28 @@
         setTimeout(() => this.refreshBaseline(), 300);
     };
 
+    // Ignore page-appearance changes for a while (e.g. right after entering/leaving full screen).
+    ProctoringSession.prototype.quiet = function (ms) {
+        this.quietUntil = Date.now() + ms;
+        setTimeout(() => this.refreshBaseline(), Math.min(ms, 800));
+    };
+
+    // Ignore every detection for a while (e.g. while a browser dialog such as the screen-share picker is open).
+    ProctoringSession.prototype.pause = function (ms) {
+        this.pausedUntil = ms > 0 ? Date.now() + ms : 0;
+        clearTimeout(this.focusTimer);
+        if (ms <= 0) { this.awayCounted = false; this.refreshBaseline(); }
+    };
+
     ProctoringSession.prototype.recordDetection = function (reason, ratio) {
         const now = Date.now();
+        if (now < this.pausedUntil) return;
+        if (reason === 'page-change') {
+            if (now < this.quietUntil || now - this.lastDetectionAt < this.config.quietAfterDetectionMs) {
+                this.refreshBaseline();
+                return;
+            }
+        }
         if (now - this.lastDetectionAt < this.config.cooldownMs) return;
         this.lastDetectionAt = now;
         this.count++;
@@ -335,11 +360,12 @@
 
         const limit = this.config.maxDetections;
         const limitReached = limit > 0 && this.count >= limit;
-        const message = limitReached
+        const why = typeof this.config.describeReason === 'function' ? this.config.describeReason(reason) : '';
+        const message = (limitReached
             ? `Screen changed ${this.count} times. Your test is being submitted.`
             : highRisk
                 ? `Screen change detection: red tag active (${this.count} detections).`
-                : `Screen change detected (${this.count}/${limit > 0 ? limit : 3}).`;
+                : `Screen change detected (${this.count}/${limit > 0 ? limit : 3}).`) + (why ? ` ${why}` : '');
         showAlert(message, highRisk || limitReached);
         if (limitReached) this.stop();
         if (typeof this.config.onDetection === 'function') {
@@ -355,4 +381,3 @@
         showLearnerBlock
     };
 })();
- 

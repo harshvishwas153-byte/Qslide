@@ -4,7 +4,7 @@ load_dotenv(Path(__file__).with_name(".env"), override=True)
 import os, re, json, uuid, hashlib, secrets
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
-from flask import Flask, render_template, request, jsonify, redirect, url_for, abort, session
+from flask import Flask, render_template, request, jsonify, redirect, url_for, abort, session, Response
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 import google.generativeai as genai
@@ -35,6 +35,33 @@ EXTRACT_MAX_CHARS = int(os.environ.get("EXTRACT_MAX_CHARS", "60000"))
 MIN_BANK_QUESTIONS = 3  # a file with at least this many written MCQs is treated as a question bank
 LEARNER_SCREEN_CHANGE_BAN_MINUTES = 30
 SCREEN_CHANGE_LIMIT = 3  # secured exams are auto-submitted on this many screen changes
+CAPTURE_MAX_BYTES = 600_000        # one full-screen JPEG
+CAPTURE_MAX_PER_STUDENT = 12       # per quiz and admission number
+CAPTURE_MAX_PER_QUIZ = 3000
+# reason -> (short title, plain-language explanation shown to the tutor with each screenshot)
+CAPTURE_INFO = {
+    'tab-hidden': ('Switched tab or minimised',
+                   'The exam tab was hidden: the student switched to another browser tab, minimised the browser or moved to another desktop.'),
+    'window-blur': ('Switched to another window or app',
+                    'The exam window lost focus: the student clicked or alt-tabbed to another window or app (including a split-screen window), opened a browser extension popup, or changed desktop.'),
+    'fullscreen-exit': ('Left full-screen mode',
+                        'The student exited full-screen mode (for example by pressing Esc or F11) during the secured exam.'),
+    'devtools': ('Developer tools or side panel open',
+                 'The browser window was resized while in full screen, which usually means developer tools or a browser side panel (such as an extension or AI assistant) was opened.'),
+    'extension': ('Browser extension active',
+                  'A browser extension added content to the exam page (for example a writing assistant, translator or injected overlay).'),
+    'page-change': ('Exam page changed on screen',
+                    'The look of the exam page changed: resizing or zooming the window, translation, dark-mode or another extension altering the page.'),
+    'share-stopped': ('Stopped screen sharing',
+                      'The student stopped sharing their screen during the secured exam. The image (if any) is the last frame seen before sharing ended.'),
+    'screenshot-key': ('Screenshot attempt detected',
+                       'The student pressed a screenshot shortcut (Print Screen, Win+Shift+S or Cmd+Shift+3/4/5). The image is the exam screen at that moment.'),
+    # older records
+    'focus-change': ('Left the exam window', 'The exam window or tab lost focus.'),
+    'screenshot': ('Exam page changed on screen', 'The look of the exam page changed.'),
+    'limit': ('Final screen (auto-submitted)', 'Last screenshot before the test was submitted automatically.'),
+}
+CAPTURE_REASONS = set(CAPTURE_INFO)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -175,7 +202,7 @@ def quiz_is_secure(quiz):
         return False
 
 ADMISSION_RE = re.compile(r'^[A-Z0-9]{5,20}$')
-SECTION_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9 \-]{0,9}$')
+SECTION_RE = re.compile(r'^\d{1,3}$')
 
 def clean_student_details(data):
     """Validate the details a student enters before the test. Returns (details, error)."""
@@ -186,8 +213,9 @@ def clean_student_details(data):
         return None, 'Please enter your full name.'
     if not ADMISSION_RE.match(admission):
         return None, 'Please enter a valid admission number (letters and numbers only, e.g. 20SCSE1410231).'
-    if not SECTION_RE.match(section):
-        return None, 'Please enter your section (up to 10 letters or numbers, e.g. A or 12).'
+    if not SECTION_RE.match(section) or not 1 <= int(section) <= 100:
+        return None, 'Please enter your section as a number from 1 to 100 (e.g. 01).'
+    section = str(int(section))
     try:
         validate_no_abusive_content([name, section], "Your details")
     except ModerationError as e:
@@ -669,6 +697,68 @@ def tutor_create():
     link = request.host_url + 'quiz/' + quiz_id
     return jsonify({'quiz_id': quiz_id, 'link': link})
 
+# ── Full-screen screenshots sent by secured exams ──
+@app.route('/quiz/<quiz_id>/capture', methods=['POST'])
+def quiz_capture(quiz_id):
+    if not ensure_db_initialized():
+        return database_problem_json()
+
+    image = request.files.get('image')
+    admission = re.sub(r'[\s\-]+', '', request.form.get('admission_no', '')).upper()
+    name = re.sub(r'\s+', ' ', request.form.get('student_name', '')).strip()[:100]
+    reason = request.form.get('reason', '')
+    if reason not in CAPTURE_REASONS:
+        reason = 'window-blur'
+    count = safe_int(request.form.get('count'), default=0)
+    # Sharing can end before a picture is possible, so that one event may arrive without an image.
+    if not name or not ADMISSION_RE.match(admission) or (not image and reason != 'share-stopped'):
+        return jsonify({'error': 'Invalid capture.'}), 400
+
+    data = None
+    if image:
+        data = image.read(CAPTURE_MAX_BYTES + 1)
+        if len(data) > CAPTURE_MAX_BYTES or not data.startswith(b'\xff\xd8\xff'):
+            return jsonify({'error': 'Invalid image.'}), 400
+
+    db = get_db()
+    try:
+        quiz = db.execute('SELECT id, secure_exam FROM quizzes WHERE id=?', (quiz_id,)).fetchone()
+        if not quiz or not quiz_is_secure(quiz):
+            return jsonify({'error': 'Not found.'}), 404
+        per_student = db.execute(
+            'SELECT COUNT(*) AS n FROM screen_captures WHERE quiz_id=? AND admission_no=?',
+            (quiz_id, admission)).fetchone()['n']
+        per_quiz = db.execute(
+            'SELECT COUNT(*) AS n FROM screen_captures WHERE quiz_id=?', (quiz_id,)).fetchone()['n']
+        if per_student >= CAPTURE_MAX_PER_STUDENT or per_quiz >= CAPTURE_MAX_PER_QUIZ:
+            return jsonify({'ok': True, 'stored': False})
+        db.execute(
+            'INSERT INTO screen_captures (quiz_id,admission_no,student_name,reason,detection_count,image,created_at) '
+            'VALUES (?,?,?,?,?,?,?)',
+            (quiz_id, admission, name, reason, count, data, datetime.now().isoformat(timespec='seconds')))
+        db.commit()
+    finally:
+        db.close()
+    return jsonify({'ok': True, 'stored': True})
+
+@app.route('/tutor/capture/<int:capture_id>')
+def tutor_capture_image(capture_id):
+    tutor = get_tutor_from_session()
+    if not tutor:
+        abort(401)
+    if not ensure_db_initialized():
+        abort(503)
+    db = get_db()
+    row = db.execute(
+        'SELECT c.image AS image FROM screen_captures c JOIN quizzes q ON q.id = c.quiz_id '
+        'WHERE c.id=? AND q.tutor_id=?', (capture_id, tutor['id'])).fetchone()
+    db.close()
+    if not row or not row['image']:
+        abort(404)
+    resp = Response(bytes(row['image']), mimetype='image/jpeg')
+    resp.headers['Cache-Control'] = 'private, max-age=3600'
+    return resp
+
 # ── AI quiz from an uploaded PDF/PPT (tutor "already created" option) ──
 def _clean_generated_questions(quiz_data):
     """Turn raw model output into the editor's question format, dropping malformed items."""
@@ -986,6 +1076,29 @@ def take_quiz(quiz_id):
         secure_exam = quiz_is_secure(quiz)
     )
 
+ATTEMPT_USED_MESSAGE = 'This admission number has already submitted this test. Only one attempt is allowed.'
+
+def admission_has_submitted(db, quiz_id, admission_no):
+    return db.execute(
+        'SELECT 1 AS x FROM submissions WHERE quiz_id=? AND UPPER(admission_no)=? LIMIT 1',
+        (quiz_id, admission_no)).fetchone() is not None
+
+@app.route('/quiz/<quiz_id>/check-attempt', methods=['POST'])
+def check_attempt(quiz_id):
+    if not ensure_db_initialized():
+        return database_problem_json()
+    admission = re.sub(r'[\s\-]+', '', (request.get_json(silent=True) or {}).get('admission_no', '')).upper()
+    if not ADMISSION_RE.match(admission):
+        return jsonify({'error': 'Invalid admission number.'}), 400
+    db = get_db()
+    try:
+        used = admission_has_submitted(db, quiz_id, admission)
+    finally:
+        db.close()
+    if used:
+        return jsonify({'allowed': False, 'error': ATTEMPT_USED_MESSAGE}), 409
+    return jsonify({'allowed': True})
+
 @app.route('/quiz/<quiz_id>/submit', methods=['POST'])
 def submit_quiz(quiz_id):
     data         = request.get_json()
@@ -1005,6 +1118,10 @@ def submit_quiz(quiz_id):
     if not quiz:
         db.close()
         return jsonify({'error': 'Quiz not found'}), 404
+
+    if admission_has_submitted(db, quiz_id, details['admission_no']):
+        db.close()
+        return jsonify({'error': ATTEMPT_USED_MESSAGE}), 409
 
     # Screen-change rules only apply to secured exams; unsecured quizzes record none.
     if quiz_is_secure(quiz):
@@ -1077,7 +1194,24 @@ def tutor_results(quiz_id):
     subs = db.execute(
         'SELECT * FROM submissions WHERE quiz_id=? ORDER BY submitted_at DESC', (quiz_id,)
     ).fetchall()
+    cap_rows = db.execute(
+        'SELECT id, admission_no, student_name, reason, detection_count, created_at, '
+        'CASE WHEN image IS NULL THEN 0 ELSE 1 END AS has_image '
+        'FROM screen_captures WHERE quiz_id=? ORDER BY id', (quiz_id,)).fetchall()
     db.close()
+
+    captures_by_admission = {}
+    for c in cap_rows:
+        title, why = CAPTURE_INFO.get(c['reason'], ('Screen change', 'A screen change was detected.'))
+        captures_by_admission.setdefault(c['admission_no'], []).append({
+            'id': c['id'],
+            'label': title,
+            'why': why,
+            'has_image': bool(c['has_image']),
+            'final': safe_int(c['detection_count'], default=0) >= SCREEN_CHANGE_LIMIT,
+            'time': (c['created_at'] or '')[11:19],
+            'student_name': c['student_name'],
+        })
 
     submissions = []
     for s in subs:
@@ -1099,6 +1233,7 @@ def tutor_results(quiz_id):
             'pct':          round((raw_score/raw_total)*100) if raw_total else 0,
             'bar_pct':      max(0, min(100, round((raw_score/raw_total)*100))) if raw_total else 0,
             'submitted_at': s['submitted_at'][:16].replace('T', ' '),
+            'captures':     captures_by_admission.get(s['admission_no'] or '', []),
             'review':       review,
             'wrong_items':  [item for item in review if not item['is_correct']],
             'screen_change_count': screen_change_count,
@@ -1106,6 +1241,13 @@ def tutor_results(quiz_id):
             'is_red_tag': proctoring_status in ('red_tag', 'auto_submitted'),
             'is_auto_submitted': proctoring_status == 'auto_submitted',
         })
+
+    # Screenshots from students who started a secured exam but have not submitted.
+    submitted_admissions = {s['admission_no'] for s in submissions}
+    unsubmitted_captures = [
+        {'admission_no': adm, 'student_name': caps[0]['student_name'], 'captures': caps}
+        for adm, caps in captures_by_admission.items() if adm not in submitted_admissions
+    ]
 
     # Names in ascending A-Z order (case-insensitive); admission number breaks ties.
     submissions.sort(key=lambda s: (s['student_name'].casefold(), s['admission_no']))
@@ -1122,6 +1264,7 @@ def tutor_results(quiz_id):
         tutor      = dict(tutor),
         questions  = questions,
         submissions= submissions,
+        unsubmitted_captures = unsubmitted_captures,
         sections   = sections,
         has_no_section = has_no_section,
         red_tag_count = len([s for s in submissions if s['is_red_tag']]),
